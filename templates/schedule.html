@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+{% block title %}Schedule — ViralCut Pro{% endblock %}
+{% block page_title %}Schedule{% endblock %}
+{% block page_subtitle %}Weekly planner · {{ week_label }}{% endblock %}
+
+{% block topbar_actions %}
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button onclick="openAddModal()" class="btn btn-primary" style="font-size:13px">+ Add Slot</button>
+    <form method="POST" action="/schedule/auto-fill" style="display:inline">
+        <input type="hidden" name="week_start" value="{{ week_start_str }}">
+        <button type="submit" class="btn btn-secondary" style="font-size:13px">⚡ Auto-fill</button>
+    </form>
+    <form method="POST" action="/schedule/copy-week" style="display:inline">
+        <input type="hidden" name="week_start" value="{{ week_start_str }}">
+        <button type="submit" class="btn btn-secondary" style="font-size:13px">📋 Copy →Next</button>
+    </form>
+    <button onclick="confirmClear()" class="btn btn-danger" style="font-size:13px">🗑 Clear Week</button>
+    <div style="width:1px;height:24px;background:var(--border)"></div>
+    <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <button id="btn-cal"  onclick="setView('calendar')" class="view-toggle-btn active" style="padding:6px 12px;font-size:12px;font-weight:600">📅 Calendar</button>
+        <button id="btn-list" onclick="setView('list')"     class="view-toggle-btn"        style="padding:6px 12px;font-size:12px;font-weight:600">☰ List</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Summary strip + week nav -->
+<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    <div class="stat-chip">
+        <span style="font-size:15px">📅</span>
+        <div>
+            <div style="font-size:17px;font-weight:800;color:var(--accent)">{{ summary.scheduled }}</div>
+            <div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.5px">Scheduled</div>
+        </div>
+    </div>
+    <div class="stat-chip">
+        <span style="font-size:15px">✅</span>
+        <div>
+            <div style="font-size:17px;font-weight:800;color:var(--green)">{{ summary.done }}</div>
+            <div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.5px">Done</div>
+        </div>
+    </div>
+    <div class="stat-chip">
+        <span style="font-size:15px">⏳</span>
+        <div>
+            <div style="font-size:17px;font-weight:800;color:var(--text-muted)">{{ all_posts | selectattr('status','equalto','scheduled') | list | length }}</div>
+            <div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.5px">Total Upcoming</div>
+        </div>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+        <a href="/schedule?week_start={{ prev_week }}" class="week-nav-btn">← Prev</a>
+        <span style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap">{{ week_label }}</span>
+        <a href="/schedule?week_start={{ next_week }}" class="week-nav-btn">Next →</a>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     CALENDAR VIEW
+══════════════════════════════════════ -->
+<div id="view-calendar">
+<div class="week-grid">
+    {% for day in calendar_data %}
+    <div class="day-col {% if day.is_today %}day-today{% endif %} {% if day.is_weekend %}day-weekend{% endif %}">
+
+        <!-- Day header -->
+        <div class="day-header">
+            <div class="day-name-label">{{ day.day_name }}</div>
+            <div class="day-num-label {% if day.is_today %}today-num{% endif %}">{{ day.day_num }}</div>
+            <div class="day-month-label">{{ day.month_name }}</div>
+        </div>
+
+        <!-- Slots -->
+        {% for slot in day.slots %}
+        <div class="slot-card slot-{{ slot.post.status if slot.post else 'empty' }}">
+            {% if slot.post %}
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <span style="font-size:10px;font-weight:700;color:var(--text-muted)">{{ slot.time }}</span>
+                <span style="font-size:13px">{{ platform_icons.get(slot.post.platform, '🌐') }}</span>
+            </div>
+            <div style="font-size:11px;color:var(--text);font-weight:600;line-height:1.3;margin-bottom:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+                {{ slot.post.clip_title or '(No clip assigned)' }}
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:4px">
+                <span class="slot-status-badge status-{{ slot.post.status }}">
+                    {% if slot.post.status == 'scheduled' %}📅
+                    {% elif slot.post.status == 'done' %}✅
+                    {% elif slot.post.status == 'failed' %}❌
+                    {% endif %}
+                    {{ slot.post.status | capitalize }}
+                </span>
+                <div style="display:flex;gap:3px;flex-shrink:0">
+                    <button
+                        onclick='openEditModal({{ slot.post.id }}, "{{ slot.post.schedule_date }}", "{{ slot.post.schedule_time }}", "{{ slot.post.platform }}", "{{ slot.post.video_id or "" }}", "{{ (slot.post.clip_title or "")|replace("\"","\\\"") }}", {{ slot.post.caption | tojson if slot.post.caption else '""' }})'
+                        class="slot-action-btn" title="Edit">✎</button>
+                    <form method="POST" action="/schedule/delete/{{ slot.post.id }}" style="display:inline">
+                        <input type="hidden" name="week_start" value="{{ week_start_str }}">
+                        <button type="submit" class="slot-action-btn slot-del-btn" title="Remove"
+                                onclick="return confirm('Remove this scheduled post?')">✕</button>
+                    </form>
+                </div>
+            </div>
+            {% else %}
+            <div style="font-size:10px;font-weight:700;color:var(--text-faint);margin-bottom:5px">{{ slot.time }}</div>
+            <button onclick="openAddModal('{{ day.date_str }}','{{ slot.time }}')" class="slot-add-btn">
+                + Add clip
+            </button>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <!-- Custom slot button -->
+        <button onclick="openAddModal('{{ day.date_str }}')" class="day-extra-add">＋ Custom time</button>
+    </div>
+    {% endfor %}
+</div>
+</div>
+
+<!-- ══════════════════════════════════════
+     LIST VIEW
+══════════════════════════════════════ -->
+<div id="view-list" style="display:none">
+    {% if all_posts %}
+    <div class="card" style="padding:0;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse">
+            <thead>
+                <tr style="background:var(--surface2)">
+                    {% for h in ["Date","Time","Platform","Clip","Status","Actions"] %}
+                    <th style="padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)">{{ h }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in all_posts %}
+                <tr style="border-bottom:1px solid var(--border);{% if loop.index is odd %}background:rgba(255,255,255,0.015){% endif %}">
+                    <td style="padding:10px 14px;font-size:13px;color:var(--text);font-weight:600;white-space:nowrap">{{ p.schedule_date }}</td>
+                    <td style="padding:10px 14px;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap">{{ p.schedule_time }}</td>
+                    <td style="padding:10px 14px;font-size:13px">
+                        <span style="display:flex;align-items:center;gap:6px;white-space:nowrap">
+                            <span>{{ platform_icons.get(p.platform, '🌐') }}</span>
+                            <span style="color:var(--text-muted)">{{ p.platform }}</span>
+                        </span>
+                    </td>
+                    <td style="padding:10px 14px;font-size:12px;color:var(--text);max-width:220px">
+                        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.clip_title or '—' }}</div>
+                    </td>
+                    <td style="padding:10px 14px;white-space:nowrap">
+                        <span class="slot-status-badge status-{{ p.status }}">
+                            {% if p.status == 'scheduled' %}📅 Scheduled
+                            {% elif p.status == 'done' %}✅ Done
+                            {% elif p.status == 'failed' %}❌ Failed
+                            {% else %}{{ p.status | capitalize }}{% endif %}
+                        </span>
+                    </td>
+                    <td style="padding:10px 14px;white-space:nowrap">
+                        <div style="display:flex;gap:6px">
+                            <button
+                                onclick='openEditModal({{ p.id }}, "{{ p.schedule_date }}", "{{ p.schedule_time }}", "{{ p.platform }}", "{{ p.video_id or "" }}", "{{ (p.clip_title or "")|replace("\"","\\\"") }}", {{ p.caption | tojson if p.caption else '""' }})'
+                                class="btn btn-secondary btn-sm" style="font-size:11px">✎ Edit</button>
+                            <form method="POST" action="/schedule/delete/{{ p.id }}" style="display:inline">
+                                <input type="hidden" name="week_start" value="{{ week_start_str }}">
+                                <button type="submit" class="btn btn-danger btn-sm" style="font-size:11px"
+                                        onclick="return confirm('Delete this scheduled post?')">✕ Del</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:60px 20px;color:var(--text-faint)">
+        <div style="font-size:36px;margin-bottom:12px">📅</div>
+        <p style="font-size:14px">No schedules yet. Click <strong style="color:var(--text)">+ Add Slot</strong> or <strong style="color:var(--text)">⚡ Auto-fill</strong> to get started.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ══════════════════════════════════════
+     ADD / EDIT MODAL
+══════════════════════════════════════ -->
+<div id="sched-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:300;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:500px;overflow:hidden;max-height:92vh;display:flex;flex-direction:column">
+        <div style="padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+            <div id="modal-title-label" style="font-size:15px;font-weight:700;color:var(--text)">Add Scheduled Post</div>
+            <button onclick="closeModal()" class="btn btn-secondary btn-sm btn-icon">✕</button>
+        </div>
+        <form method="POST" action="/schedule/add" id="sched-form" style="overflow-y:auto">
+            <input type="hidden" name="week_start" value="{{ week_start_str }}">
+            <input type="hidden" name="post_id" id="modal-post-id" value="">
+            <div style="padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+
+                <!-- Date + Time -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div class="form-group">
+                        <label class="form-label">Date</label>
+                        <input type="date" name="schedule_date" id="modal-date" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Time</label>
+                        <input type="time" name="schedule_time" id="modal-time" class="form-input" required value="12:00">
+                    </div>
+                </div>
+
+                <!-- Platform -->
+                <div class="form-group">
+                    <label class="form-label">Platform</label>
+                    <div style="display:flex;gap:7px;flex-wrap:wrap">
+                        {% for pname, picon in [("TikTok","📱"),("Instagram","📸"),("YouTube","🖥"),("All","🌐")] %}
+                        <label style="cursor:pointer">
+                            <input type="radio" name="platform" value="{{ pname }}" style="display:none"
+                                   {% if pname == 'All' %}checked{% endif %}
+                                   onchange="updatePlatBtns()">
+                            <div class="plat-opt {% if pname == 'All' %}active{% endif %}" data-p="{{ pname }}">{{ picon }} {{ pname }}</div>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Clip selector -->
+                <div class="form-group">
+                    <label class="form-label">Clip from Queue</label>
+                    {% if queue_items %}
+                    <select name="video_id" id="modal-clip" class="form-input" onchange="onClipSelect(this)">
+                        <option value="">— Select a clip (optional) —</option>
+                        {% for item in queue_items %}
+                        <option value="{{ item.video_id }}"
+                                data-title="{{ item.title | replace('"','&quot;') }}">
+                            {{ item.title[:58] }}{% if item.title | length > 58 %}…{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% else %}
+                    <div style="font-size:12px;color:var(--text-faint);padding:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
+                        No clips in queue yet. Add videos from <a href="/viral-finder" style="color:var(--accent)">Viral Finder</a>.
+                    </div>
+                    <input type="hidden" name="video_id" value="">
+                    {% endif %}
+                    <input type="hidden" name="clip_title" id="modal-clip-title">
+                </div>
+
+                <!-- Caption -->
+                <div class="form-group">
+                    <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                        Caption
+                        <button type="button" onclick="fetchCaption()" id="fetch-cap-btn"
+                                class="btn btn-secondary btn-sm" style="font-size:11px;display:none">
+                            ↺ Auto-fill from generator
+                        </button>
+                    </label>
+                    <textarea name="caption" id="modal-caption" class="form-input" rows="4"
+                              placeholder="Optional caption for this post…"
+                              style="resize:vertical;font-size:13px;line-height:1.5"></textarea>
+                    <div style="display:flex;justify-content:space-between;margin-top:4px">
+                        <span style="font-size:11px;color:var(--text-faint)">Optional — auto-fill from caption generator</span>
+                        <span id="modal-char-count" style="font-size:11px;color:var(--text-faint)">0 chars</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0">
+                <button type="button" onclick="closeModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary">💾 Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Clear confirm -->
+<div id="clear-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:300;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:380px;padding:28px;text-align:center">
+        <div style="font-size:32px;margin-bottom:12px">🗑</div>
+        <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:8px">Clear this week's schedule?</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:24px;line-height:1.6">
+            This will permanently remove all scheduled posts for <strong style="color:var(--text)">{{ week_label }}</strong>.
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center">
+            <button onclick="document.getElementById('clear-modal').style.display='none'" class="btn btn-secondary">Cancel</button>
+            <form method="POST" action="/schedule/clear-week" style="display:inline">
+                <input type="hidden" name="week_start" value="{{ week_start_str }}">
+                <button type="submit" class="btn btn-danger">Yes, Clear All</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.stat-chip {
+    display:flex;align-items:center;gap:10px;padding:10px 16px;
+    background:var(--surface);border:1px solid var(--border);border-radius:10px;
+}
+.week-nav-btn {
+    padding:6px 14px;border:1px solid var(--border);border-radius:8px;
+    font-size:13px;font-weight:600;color:var(--text-muted);text-decoration:none;
+    background:var(--surface2);transition:all 0.14s;display:inline-flex;align-items:center;
+}
+.week-nav-btn:hover { border-color:var(--accent);color:var(--accent);background:var(--accent-dim) }
+
+/* Calendar */
+.week-grid {
+    display:grid;
+    grid-template-columns:repeat(7,minmax(120px,1fr));
+    gap:10px;
+    overflow-x:auto;
+}
+.day-col {
+    display:flex;flex-direction:column;gap:7px;
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:10px;padding:10px;min-width:0;
+}
+.day-today  { border-color:var(--accent);box-shadow:0 0 0 1px rgba(127,119,221,0.25) }
+.day-weekend { background:rgba(127,119,221,0.02) }
+.day-header { text-align:center;padding-bottom:8px;border-bottom:1px solid var(--border);margin-bottom:2px }
+.day-name-label  { font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-faint) }
+.day-num-label   { font-size:22px;font-weight:900;color:var(--text);line-height:1;margin:3px 0 }
+.today-num       { color:var(--accent) }
+.day-month-label { font-size:10px;color:var(--text-faint) }
+
+/* Slot cards */
+.slot-card {
+    border-radius:8px;padding:8px 8px 7px;border:1px solid var(--border);
+    background:var(--surface2);min-height:68px;
+}
+.slot-empty      { border-style:dashed;background:transparent;display:flex;flex-direction:column }
+.slot-scheduled  { border-color:rgba(127,119,221,0.35);background:rgba(127,119,221,0.06) }
+.slot-done       { border-color:rgba(52,211,153,0.3);background:rgba(52,211,153,0.04) }
+.slot-failed     { border-color:rgba(248,113,113,0.35);background:rgba(248,113,113,0.04) }
+
+.slot-status-badge {
+    display:inline-flex;align-items:center;gap:3px;
+    font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;white-space:nowrap;
+}
+.status-scheduled { background:rgba(127,119,221,0.15);color:var(--accent) }
+.status-done      { background:rgba(52,211,153,0.15);color:var(--green) }
+.status-failed    { background:rgba(248,113,113,0.15);color:#f87171 }
+
+.slot-action-btn {
+    background:none;border:1px solid var(--border);border-radius:4px;
+    color:var(--text-faint);cursor:pointer;padding:2px 5px;font-size:11px;
+    transition:all 0.12s;line-height:1.2;
+}
+.slot-action-btn:hover  { border-color:var(--accent);color:var(--accent) }
+.slot-del-btn:hover     { border-color:#f87171;color:#f87171 }
+.slot-add-btn {
+    flex:1;padding:8px 4px;border:none;border-radius:6px;
+    background:none;color:var(--text-faint);cursor:pointer;font-size:11px;
+    font-weight:600;transition:all 0.14s;text-align:center;
+}
+.slot-add-btn:hover { background:var(--accent-dim);color:var(--accent) }
+.day-extra-add {
+    width:100%;padding:5px 4px;border:none;border-radius:6px;
+    background:none;color:var(--text-faint);cursor:pointer;font-size:10px;
+    font-weight:600;transition:all 0.14s;text-align:center;margin-top:1px;
+}
+.day-extra-add:hover { background:var(--surface2);color:var(--text-muted) }
+
+/* Platform picker in modal */
+.plat-opt {
+    padding:6px 11px;border-radius:8px;border:1px solid var(--border);
+    background:var(--surface2);color:var(--text-muted);font-size:12px;font-weight:600;
+    cursor:pointer;transition:all 0.14s;
+}
+.plat-opt.active { border-color:var(--accent);background:var(--accent-dim);color:var(--accent) }
+
+/* View toggle */
+.view-toggle-btn {
+    background:none;border:none;cursor:pointer;color:var(--text-muted);
+    font-weight:600;transition:all 0.14s;
+}
+.view-toggle-btn.active { background:var(--accent-dim);color:var(--accent) }
+</style>
+
+<script>
+// ── View toggle ──────────────────────────────────────────────
+function setView(v) {
+    const isCal = v === 'calendar';
+    document.getElementById('view-calendar').style.display = isCal ? '' : 'none';
+    document.getElementById('view-list').style.display     = isCal ? 'none' : '';
+    document.getElementById('btn-cal').classList.toggle('active',  isCal);
+    document.getElementById('btn-list').classList.toggle('active', !isCal);
+}
+
+// ── Modal ────────────────────────────────────────────────────
+let _currentVideoId = '';
+
+function openAddModal(dateStr, timeStr) {
+    document.getElementById('modal-title-label').textContent = 'Add Scheduled Post';
+    document.getElementById('modal-post-id').value    = '';
+    document.getElementById('modal-date').value       = dateStr || '{{ calendar_data[0].date_str }}';
+    document.getElementById('modal-time').value       = timeStr || '12:00';
+    const clipSel = document.getElementById('modal-clip');
+    if (clipSel) clipSel.value = '';
+    document.getElementById('modal-clip-title').value = '';
+    document.getElementById('modal-caption').value    = '';
+    document.getElementById('modal-char-count').textContent = '0 chars';
+    document.getElementById('fetch-cap-btn').style.display = 'none';
+    document.querySelector('input[name="platform"][value="All"]').checked = true;
+    updatePlatBtns();
+    _currentVideoId = '';
+    document.getElementById('sched-modal').style.display = 'flex';
+}
+
+function openEditModal(postId, dateStr, timeStr, platform, videoId, clipTitle, caption) {
+    document.getElementById('modal-title-label').textContent = 'Edit Scheduled Post';
+    document.getElementById('modal-post-id').value    = postId;
+    document.getElementById('modal-date').value       = dateStr;
+    document.getElementById('modal-time').value       = timeStr;
+    document.getElementById('modal-clip-title').value = clipTitle;
+    document.getElementById('modal-caption').value    = caption || '';
+    updateCharCount(caption || '');
+    _currentVideoId = videoId;
+    document.getElementById('fetch-cap-btn').style.display = videoId ? 'inline-flex' : 'none';
+    const platInput = document.querySelector(`input[name="platform"][value="${platform}"]`);
+    if (platInput) platInput.checked = true;
+    updatePlatBtns();
+    const clipSel = document.getElementById('modal-clip');
+    if (clipSel) clipSel.value = videoId || '';
+    document.getElementById('sched-modal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('sched-modal').style.display = 'none';
+}
+
+document.getElementById('sched-modal').addEventListener('click', e => { if (e.target === document.getElementById('sched-modal')) closeModal(); });
+
+function confirmClear() {
+    document.getElementById('clear-modal').style.display = 'flex';
+}
+document.getElementById('clear-modal').addEventListener('click', e => { if (e.target === document.getElementById('clear-modal')) document.getElementById('clear-modal').style.display='none'; });
+
+// ── Platform buttons ─────────────────────────────────────────
+function updatePlatBtns() {
+    document.querySelectorAll('.plat-opt').forEach(opt => {
+        const inp = opt.closest('label').querySelector('input');
+        opt.classList.toggle('active', inp.checked);
+    });
+}
+
+// ── Clip selector ────────────────────────────────────────────
+function onClipSelect(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    _currentVideoId = sel.value;
+    document.getElementById('modal-clip-title').value = opt.dataset.title || '';
+    document.getElementById('fetch-cap-btn').style.display = sel.value ? 'inline-flex' : 'none';
+}
+
+async function fetchCaption() {
+    if (!_currentVideoId) return;
+    const btn = document.getElementById('fetch-cap-btn');
+    btn.textContent = '⏳ Loading…';
+    btn.disabled = true;
+    try {
+        const res  = await fetch('/captions/' + _currentVideoId);
+        const data = await res.json();
+        if (data.ok) {
+            document.getElementById('modal-caption').value = data.medium;
+            updateCharCount(data.medium);
+        } else {
+            btn.textContent = '↺ Auto-fill from generator';
+        }
+    } catch {}
+    finally {
+        btn.textContent = '↺ Auto-fill from generator';
+        btn.disabled = false;
+    }
+}
+
+// ── Char counter ─────────────────────────────────────────────
+const capArea = document.getElementById('modal-caption');
+capArea.addEventListener('input', () => updateCharCount(capArea.value));
+function updateCharCount(text) {
+    const el = document.getElementById('modal-char-count');
+    el.textContent = (text || '').length + ' chars';
+    el.style.color = (text || '').length > 280 ? '#f87171' : 'var(--text-faint)';
+}
+</script>
+{% endblock %}

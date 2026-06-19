@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ViralCut Pro{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <div class="logo-icon">✂</div>
+            <div class="logo-text">Viral<span>Cut</span> Pro</div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-section-label">Main</div>
+                <a href="/dashboard" class="nav-item {% if active == 'dashboard' %}active{% endif %}">
+                    <span class="nav-icon">▣</span> Dashboard
+                </a>
+                <a href="/viral-finder" class="nav-item {% if active == 'viral-finder' %}active{% endif %}">
+                    <span class="nav-icon">🔥</span> Viral Finder
+                </a>
+                <a href="/clip-editor" class="nav-item {% if active == 'clip-editor' %}active{% endif %}">
+                    <span class="nav-icon">✂</span> Clip Editor
+                </a>
+                <a href="/auto-upload" class="nav-item {% if active == 'auto-upload' %}active{% endif %}">
+                    <span class="nav-icon">↑</span> Auto Upload
+                </a>
+            </div>
+            <div class="nav-section">
+                <div class="nav-section-label">Manage</div>
+                <a href="/accounts" class="nav-item {% if active == 'accounts' %}active{% endif %}">
+                    <span class="nav-icon">👤</span> Accounts
+                </a>
+                <a href="/schedule" class="nav-item {% if active == 'schedule' %}active{% endif %}">
+                    <span class="nav-icon">🗓</span> Schedule
+                </a>
+                <a href="/settings" class="nav-item {% if active == 'settings' %}active{% endif %}">
+                    <span class="nav-icon">⚙</span> Settings
+                </a>
+            </div>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="sidebar-user">
+                <div class="avatar">V</div>
+                <div class="user-info">
+                    <div class="user-name">My Workspace</div>
+                    <div class="user-plan">Pro Plan</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <div class="main">
+        <div class="topbar">
+            <div class="topbar-left">
+                <h1>{% block page_title %}{% endblock %}</h1>
+                <p>{% block page_subtitle %}{% endblock %}</p>
+            </div>
+            <div class="topbar-right">
+                {% block topbar_actions %}{% endblock %}
+            </div>
+        </div>
+        <div class="content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="flash flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</body>
+</html>

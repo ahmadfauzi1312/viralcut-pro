@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — ViralCut Pro{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Welcome back. Here's what's happening.{% endblock %}
+
+{% block topbar_actions %}
+<a href="/viral-finder" class="btn btn-primary">🔥 Find Viral Videos</a>
+{% endblock %}
+
+{% block content %}
+<div class="grid-4" style="margin-bottom:24px">
+    <div class="stat-card">
+        <div class="stat-label">Clips Generated</div>
+        <div class="stat-value">0</div>
+        <div class="stat-sub">this week</div>
+        <div class="stat-icon">✂</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Videos Uploaded</div>
+        <div class="stat-value">0</div>
+        <div class="stat-sub">this week</div>
+        <div class="stat-icon">↑</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Connected Accounts</div>
+        <div class="stat-value">{{ active_accounts }}</div>
+        <div class="stat-sub">platforms active</div>
+        <div class="stat-icon">👤</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Next Upload</div>
+        <div class="stat-value" style="font-size:20px">{{ next_slot or '—' }}</div>
+        <div class="stat-sub">scheduled slot</div>
+        <div class="stat-icon">🗓</div>
+    </div>
+</div>
+
+<div class="grid-2" style="gap:20px">
+    <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div style="font-size:15px;font-weight:700">Recent Activity</div>
+        </div>
+        <div class="activity-item">
+            <div class="activity-dot" style="background:#7F77DD"></div>
+            <div>
+                <div class="activity-text">App started — ready to find viral content</div>
+                <div class="activity-time">Just now</div>
+            </div>
+        </div>
+        <div class="activity-item">
+            <div class="activity-dot" style="background:#34d399"></div>
+            <div>
+                <div class="activity-text"><strong>{{ active_accounts }} account{% if active_accounts != 1 %}s{% endif %}</strong> connected and active</div>
+                <div class="activity-time">Auto-detected</div>
+            </div>
+        </div>
+        <div class="activity-item">
+            <div class="activity-dot" style="background:#fbbf24"></div>
+            <div>
+                <div class="activity-text">Go to <strong>Viral Finder</strong> to scan trending videos</div>
+                <div class="activity-time">Suggested</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px">Upload Schedule</div>
+        {% for slot in schedule %}
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:18px;font-weight:700;color:{% if slot.enabled %}var(--accent){% else %}var(--text-faint){% endif %};width:60px">{{ slot.slot_time }}</div>
+            <div style="font-size:13px;color:var(--text-muted);flex:1">Daily slot</div>
+            <div class="badge {% if slot.enabled %}badge-purple{% else %}badge-red{% endif %}">
+                {% if slot.enabled %}Active{% else %}Off{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        <div style="margin-top:14px">
+            <a href="/schedule" class="btn btn-secondary btn-sm">Manage Schedule →</a>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:16px">Quick Actions</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <a href="/viral-finder" class="btn btn-secondary">🔥 Scan Viral Videos</a>
+        <a href="/accounts" class="btn btn-secondary">👤 Manage Accounts</a>
+        <a href="/schedule" class="btn btn-secondary">🗓 Edit Schedule</a>
+        <a href="/settings" class="btn btn-secondary">⚙ Settings</a>
+    </div>
+</div>
+{% endblock %}

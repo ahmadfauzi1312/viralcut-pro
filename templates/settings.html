@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Settings — ViralCut Pro{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block page_subtitle %}Configure content preferences, automation rules, and integrations{% endblock %}
+
+{% block topbar_actions %}
+<button form="settings-form" type="submit" class="btn btn-primary">💾 Save Settings</button>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:640px">
+
+    <!-- API SETTINGS -->
+    <div class="card" style="margin-bottom:16px;border-color:{% if api_key_configured %}#2a4a2a{% else %}#3a2a10{% endif %}">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <div style="font-size:15px;font-weight:700">🔑 YouTube API Settings</div>
+            {% if api_key_configured %}
+            <span class="badge badge-green" style="font-size:11px">✓ Configured</span>
+            {% else %}
+            <span class="badge badge-yellow" style="font-size:11px">Not set</span>
+            {% endif %}
+        </div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6">
+            Enter your <strong style="color:var(--text)">YouTube Data API v3</strong> key to fetch live trending videos.
+            Get a free key at <strong style="color:var(--accent)">console.cloud.google.com</strong> → APIs & Services → Credentials → Create API Key, then enable <em>YouTube Data API v3</em>.
+            {% if env_key_set %}
+            <div style="margin-top:8px;padding:8px 12px;background:#0e2018;border-radius:6px;border:1px solid #1a4a28;font-size:12px;color:var(--green)">
+                ✓ A key is set via Replit Secrets (takes priority over the field below)
+            </div>
+            {% endif %}
+        </div>
+        <form method="POST" action="/settings/save-api-key" style="display:flex;gap:8px;align-items:flex-end">
+            <div style="flex:1">
+                <label class="form-label">API Key</label>
+                <input type="password" name="youtube_api_key" class="form-input"
+                       placeholder="AIza…"
+                       value="{{ masked_key }}"
+                       autocomplete="off">
+            </div>
+            <button type="submit" class="btn btn-primary" style="flex-shrink:0">Save Key</button>
+            {% if db_key_set %}
+            <button type="submit" form="clear-key-form" class="btn btn-danger" style="flex-shrink:0">Clear</button>
+            {% endif %}
+        </form>
+        {% if db_key_set %}
+        <form id="clear-key-form" method="POST" action="/settings/clear-api-key"></form>
+        {% endif %}
+        <div style="margin-top:10px;font-size:11px;color:var(--text-faint)">
+            ⚠ Stored in local database. For better security, use the Replit Secrets panel (🔒 in sidebar) — it takes priority.
+        </div>
+    </div>
+
+    <form method="POST" action="/settings/update" id="settings-form">
+
+        <div class="card" style="margin-bottom:16px">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px">Content Genres</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Select which content genres to scan for viral videos</div>
+            <div class="checkbox-group">
+                {% set active_genres = settings.genres.split(',') %}
+                {% for genre in ['Automotive', 'Food', 'DIY', 'Tech', 'Lifestyle', 'Gaming', 'Sports', 'Music'] %}
+                <label class="checkbox-item">
+                    <input type="checkbox" name="genres" value="{{ genre }}"
+                           {% if genre in active_genres %}checked{% endif %}>
+                    {{ genre }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px">Default Clip Duration</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Preferred clip length for auto-generated shorts</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                {% for dur in [30, 60, 90, 120] %}
+                <label style="cursor:pointer">
+                    <input type="radio" name="clip_duration" value="{{ dur }}" style="display:none"
+                           {% if settings.clip_duration == dur|string %}checked{% endif %}
+                           onchange="updateDurBtn()">
+                    <div class="dur-btn badge badge-purple" data-val="{{ dur }}"
+                         style="padding:8px 20px;font-size:14px;cursor:pointer;
+                                {% if settings.clip_duration == dur|string %}opacity:1{% else %}opacity:0.4{% endif %}">
+                        {{ dur }}s
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px">Minimum Viral Score</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Only show videos at or above this viral score threshold</div>
+            <div class="range-wrap">
+                <input type="range" name="viral_score_min" class="range-input"
+                       min="0" max="100" step="5"
+                       value="{{ settings.viral_score_min }}"
+                       oninput="this.nextElementSibling.textContent=this.value">
+                <div class="range-value">{{ settings.viral_score_min }}</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px">Clips Per Day</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Maximum number of clips to generate and queue per day</div>
+            <div class="range-wrap">
+                <input type="range" name="clips_per_day" class="range-input"
+                       min="1" max="10" step="1"
+                       value="{{ settings.clips_per_day }}"
+                       oninput="this.nextElementSibling.textContent=this.value">
+                <div class="range-value">{{ settings.clips_per_day }}</div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function updateDurBtn() {
+    document.querySelectorAll('.dur-btn').forEach(btn => {
+        const radio = btn.closest('label').querySelector('input[type=radio]');
+        btn.style.opacity = radio.checked ? '1' : '0.4';
+    });
+}
+document.querySelectorAll('input[name=clip_duration]').forEach(r => r.addEventListener('change', updateDurBtn));
+</script>
+{% endblock %}

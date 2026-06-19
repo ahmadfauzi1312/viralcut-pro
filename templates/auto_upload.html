@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% block title %}Queue — ViralCut Pro{% endblock %}
+{% block page_title %}Upload Queue{% endblock %}
+{% block page_subtitle %}Drag to reorder · assign slots · mark as posted{% endblock %}
+
+{% block topbar_actions %}
+<div style="display:flex;align-items:center;gap:10px">
+    <div style="font-size:13px;color:var(--text-muted)">
+        <span style="color:var(--accent);font-weight:700">{{ pending_count }}</span> pending
+        &nbsp;·&nbsp;
+        <span style="color:var(--green);font-weight:700">{{ posted_count }}</span> posted
+    </div>
+    {% if pending_count > 0 or posted_count > 0 %}
+    <form method="POST" action="/queue/clear-posted" style="display:inline">
+        <button type="submit" class="btn btn-secondary btn-sm">🗑 Clear Posted</button>
+    </form>
+    {% endif %}
+    <a href="/viral-finder" class="btn btn-primary btn-sm">+ Add Videos</a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- Tab filters -->
+<div style="display:flex;gap:4px;margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px;width:fit-content">
+    <button onclick="setTab('all')"     id="tab-all"     class="tab-btn active">All <span class="tab-count">{{ queue|length }}</span></button>
+    <button onclick="setTab('pending')" id="tab-pending" class="tab-btn">Pending <span class="tab-count">{{ pending_count }}</span></button>
+    <button onclick="setTab('posted')"  id="tab-posted"  class="tab-btn">Posted <span class="tab-count">{{ posted_count }}</span></button>
+</div>
+
+{% if queue %}
+<div id="queue-list" style="display:flex;flex-direction:column;gap:8px;max-width:860px">
+    {% for item in queue %}
+    <div class="q-row" id="qrow-{{ item.id }}" data-id="{{ item.id }}" data-status="{{ item.status }}"
+         style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:opacity 0.2s;{% if item.status == 'posted' %}opacity:0.55{% endif %}">
+
+        <!-- Drag handle -->
+        <div class="drag-handle" title="Drag to reorder"
+             style="cursor:grab;color:var(--text-faint);font-size:18px;padding:0 4px;flex-shrink:0;user-select:none">⠿</div>
+
+        <!-- Position badge -->
+        <div class="pos-badge" style="width:24px;height:24px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text-muted);flex-shrink:0">
+            {{ loop.index }}
+        </div>
+
+        <!-- Thumbnail -->
+        {% if item.thumbnail %}
+        <img src="{{ item.thumbnail }}" style="width:80px;height:45px;object-fit:cover;border-radius:6px;flex-shrink:0">
+        {% else %}
+        <div style="width:80px;height:45px;background:linear-gradient(135deg,#1a1527,#0e1527);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">▶</div>
+        {% endif %}
+
+        <!-- Info -->
+        <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.title }}</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap">
+                <span style="font-size:11px;color:var(--text-muted)">{{ item.channel }}</span>
+                <span class="badge
+                    {% if item.genre == 'Automotive' %}badge-auto
+                    {% elif item.genre == 'Food' %}badge-food
+                    {% elif item.genre == 'DIY' %}badge-diy
+                    {% elif item.genre == 'Tech' %}badge-tech
+                    {% elif item.genre == 'Gaming' %}badge-yellow
+                    {% else %}badge-life{% endif %}" style="font-size:10px">{{ item.genre }}</span>
+                <span class="badge badge-purple" style="font-size:10px">{{ item.duration }}s</span>
+                <span style="font-size:11px;color:var(--text-faint)">Score {{ item.score }}</span>
+            </div>
+            <!-- Inline notes -->
+            <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+                <input
+                    type="text"
+                    class="notes-input"
+                    data-id="{{ item.id }}"
+                    value="{{ item.notes | e }}"
+                    placeholder="Add caption / posting notes…"
+                    maxlength="280"
+                    style="flex:1;background:transparent;border:none;border-bottom:1px solid transparent;border-radius:0;padding:2px 0;font-size:12px;color:var(--text-muted);outline:none;transition:border-color 0.15s;min-width:0"
+                    onfocus="this.style.borderBottomColor='var(--accent)';this.style.color='var(--text)'"
+                    onblur="saveNotes(this)"
+                    onkeydown="if(event.key==='Enter'){this.blur()}"
+                >
+                <span class="notes-saved" id="notes-saved-{{ item.id }}"
+                      style="font-size:11px;color:var(--green);opacity:0;transition:opacity 0.3s;flex-shrink:0;white-space:nowrap">✓ saved</span>
+            </div>
+        </div>
+
+        <!-- Slot assignment -->
+        <div style="flex-shrink:0;min-width:130px">
+            <select class="slot-select"
+                    data-id="{{ item.id }}"
+                    onchange="assignSlot(this)"
+                    style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--text);outline:none;width:100%;cursor:pointer">
+                <option value="">No slot</option>
+                {% for slot in slots %}
+                <option value="{{ slot.id }}" {% if item.assigned_slot == slot.id %}selected{% endif %}>
+                    🕐 {{ slot.slot_time }}{% if not slot.enabled %} (off){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Status badge -->
+        <div style="flex-shrink:0;width:80px;text-align:center">
+            {% if item.status == 'posted' %}
+            <span class="badge badge-green">✓ Posted</span>
+            {% elif item.assigned_slot %}
+            <span class="badge badge-purple">Scheduled</span>
+            {% else %}
+            <span class="badge" style="background:var(--surface2);color:var(--text-faint)">Pending</span>
+            {% endif %}
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex;gap:6px;flex-shrink:0">
+            {% if item.status == 'pending' %}
+            <button onclick="markPosted({{ item.id }}, this)"
+                    class="btn btn-secondary btn-sm"
+                    title="Mark as posted"
+                    style="font-size:12px">✓ Posted</button>
+            {% else %}
+            <button onclick="markPending({{ item.id }}, this)"
+                    class="btn btn-secondary btn-sm"
+                    title="Move back to pending"
+                    style="font-size:12px;color:var(--text-muted)">↩ Undo</button>
+            {% endif %}
+            <form method="POST" action="/queue/remove/{{ item.id }}" style="display:inline"
+                  onsubmit="return confirm('Remove from queue?')">
+                <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Remove">🗑</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<div style="max-width:860px">
+    <div class="card" style="text-align:center;padding:60px 20px">
+        <div style="font-size:48px;margin-bottom:14px">📋</div>
+        <div style="font-size:17px;font-weight:600;color:var(--text-muted)">Queue is Empty</div>
+        <div style="font-size:13px;color:var(--text-faint);margin-top:8px;margin-bottom:20px">
+            Go to Viral Finder, scan for trending videos, and click <strong style="color:var(--text)">Add to Queue</strong>.
+        </div>
+        <a href="/viral-finder" class="btn btn-primary">🔥 Find Viral Videos</a>
+    </div>
+</div>
+{% endif %}
+
+<!-- Reorder saved toast -->
+<div id="reorder-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;color:var(--text-muted);z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.5)">
+    ✓ Order saved
+</div>
+
+<style>
+.tab-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.14s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.tab-btn.active { background: var(--surface2); color: var(--text); }
+.tab-btn:hover:not(.active) { color: var(--text); }
+.tab-count {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 11px;
+    color: var(--text-faint);
+}
+.tab-btn.active .tab-count { background: var(--border); color: var(--text-muted); }
+.q-row.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.drag-handle:active { cursor: grabbing; }
+.sortable-ghost { opacity: 0.3; background: var(--accent-dim) !important; border-color: var(--accent) !important; }
+.sortable-chosen { box-shadow: 0 4px 20px rgba(127,119,221,0.25); }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+const sortable = Sortable.create(document.getElementById('queue-list'), {
+    handle: '.drag-handle',
+    animation: 150,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    onEnd: function() {
+        updatePositionBadges();
+        saveOrder();
+    }
+});
+
+function updatePositionBadges() {
+    document.querySelectorAll('#queue-list .q-row').forEach((row, i) => {
+        const badge = row.querySelector('.pos-badge');
+        if (badge) badge.textContent = i + 1;
+    });
+}
+
+async function saveOrder() {
+    const ids = [...document.querySelectorAll('#queue-list .q-row')].map(r => parseInt(r.dataset.id));
+    await fetch('/queue/reorder', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ids})
+    });
+    showToast('reorder-toast');
+}
+
+async function assignSlot(sel) {
+    const id = sel.dataset.id;
+    const slotId = sel.value;
+    const row = document.getElementById('qrow-' + id);
+    const statusEl = row.querySelector('[style*="width:80px"]');
+    const res = await fetch('/queue/assign-slot/' + id, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({slot_id: slotId || null})
+    });
+    const data = await res.json();
+    if (data.ok && statusEl) {
+        if (row.dataset.status === 'posted') return;
+        statusEl.innerHTML = slotId
+            ? '<span class="badge badge-purple">Scheduled</span>'
+            : '<span class="badge" style="background:var(--surface2);color:var(--text-faint)">Pending</span>';
+    }
+}
+
+async function markPosted(id, btn) {
+    const res = await fetch('/queue/mark-posted/' + id, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+        const row = document.getElementById('qrow-' + id);
+        row.dataset.status = 'posted';
+        row.style.opacity = '0.55';
+        const statusEl = row.querySelector('[style*="width:80px"]');
+        if (statusEl) statusEl.innerHTML = '<span class="badge badge-green">✓ Posted</span>';
+        btn.outerHTML = '<button onclick="markPending(' + id + ', this)" class="btn btn-secondary btn-sm" style="font-size:12px;color:var(--text-muted)" title="Undo">↩ Undo</button>';
+        updateCounts(data.pending_count, data.posted_count);
+    }
+}
+
+async function markPending(id, btn) {
+    const res = await fetch('/queue/mark-pending/' + id, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+        const row = document.getElementById('qrow-' + id);
+        row.dataset.status = 'pending';
+        row.style.opacity = '1';
+        const statusEl = row.querySelector('[style*="width:80px"]');
+        const slot = row.querySelector('.slot-select').value;
+        if (statusEl) statusEl.innerHTML = slot
+            ? '<span class="badge badge-purple">Scheduled</span>'
+            : '<span class="badge" style="background:var(--surface2);color:var(--text-faint)">Pending</span>';
+        btn.outerHTML = '<button onclick="markPosted(' + id + ', this)" class="btn btn-secondary btn-sm" style="font-size:12px" title="Mark as posted">✓ Posted</button>';
+        updateCounts(data.pending_count, data.posted_count);
+    }
+}
+
+function updateCounts(pending, posted) {
+    document.querySelectorAll('.tab-count')[0].textContent = pending + posted;
+    document.querySelectorAll('.tab-count')[1].textContent = pending;
+    document.querySelectorAll('.tab-count')[2].textContent = posted;
+    document.querySelector('.topbar-right [style*="text-align"]')
+    const spans = document.querySelectorAll('.topbar-right span[style*="font-weight:700"]');
+    if (spans[0]) spans[0].textContent = pending;
+    if (spans[1]) spans[1].textContent = posted;
+}
+
+function setTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.querySelectorAll('.q-row').forEach(row => {
+        if (tab === 'all') row.style.display = '';
+        else row.style.display = row.dataset.status === tab ? '' : 'none';
+    });
+}
+
+function showToast(id) {
+    const t = document.getElementById(id);
+    t.style.display = 'block';
+    setTimeout(() => t.style.display = 'none', 1800);
+}
+
+let notesSaveTimers = {};
+async function saveNotes(input) {
+    const id = input.dataset.id;
+    input.style.borderBottomColor = 'transparent';
+    input.style.color = 'var(--text-muted)';
+    clearTimeout(notesSaveTimers[id]);
+    notesSaveTimers[id] = setTimeout(async () => {
+        const res = await fetch('/queue/update-notes/' + id, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({notes: input.value})
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const indicator = document.getElementById('notes-saved-' + id);
+            if (indicator) {
+                indicator.style.opacity = '1';
+                setTimeout(() => indicator.style.opacity = '0', 1600);
+            }
+        }
+    }, 400);
+}
+</script>
+{% endblock %}
