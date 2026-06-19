@@ -91,27 +91,27 @@ def viral_finder():
     conn = get_db()
     queued_ids = {r["video_id"] for r in conn.execute("SELECT video_id FROM queue").fetchall()}
     capped_ids  = {r["video_id"] for r in conn.execute("SELECT video_id FROM captions").fetchall()}
-    conn.close()
+conn.close()
 
-# Try real API on page load too
-error = None
-scanned = False
-if api_key:
-    try:
-        raw = fetch_trending(api_key, region="ID", max_results=20)
-        videos = filter_videos(raw, min_score, genres)
-        scanned = True
-    except Exception:
+    # Try real API on page load too
+    error = None
+    scanned = False
+    if api_key:
+        try:
+            raw = fetch_trending(api_key, region="ID", max_results=20)
+            videos = filter_videos(raw, min_score, genres)
+            scanned = True
+        except Exception:
+            videos = filter_videos(MOCK_VIDEOS, min_score, genres)
+    else:
         videos = filter_videos(MOCK_VIDEOS, min_score, genres)
-else:
-    videos = filter_videos(MOCK_VIDEOS, min_score, genres)
 
-for v in videos:
-    v["in_queue"]     = v["video_id"] in queued_ids
-    v["has_captions"] = v["video_id"] in capped_ids
+    for v in videos:
+        v["in_queue"]     = v["video_id"] in queued_ids
+        v["has_captions"] = v["video_id"] in capped_ids
 
-return render_template("viral_finder.html", active="viral-finder",
-                       videos=videos, scanned=scanned, error=error,
+    return render_template("viral_finder.html", active="viral-finder",
+                           videos=videos, scanned=scanned, error=error,
                            api_configured=bool(api_key),
                            min_score=min_score, genres=genres)
 
