@@ -20,24 +20,14 @@
         <div style="font-size:14px;font-weight:700;color:#c4b5fd;margin-bottom:6px">YouTube API Key Not Configured</div>
         <div style="font-size:13px;color:#9070b0;line-height:1.7">
             Add your <strong style="color:#e2e2f0">YOUTUBE_API_KEY</strong> in
-            <a href="/settings" style="color:var(--accent);font-weight:600">Settings → YouTube API</a>
-            or via the Replit Secrets panel (🔒 sidebar).<br>
-            Get a free key at <strong style="color:#a78bfa">console.cloud.google.com</strong> → APIs &amp; Services → Credentials → Create API Key, then enable <em>YouTube Data API v3</em>.<br>
-            Showing <strong style="color:#e2e2f0">mock data</strong> below until the key is added.
+            <a href="/settings" style="color:var(--accent);font-weight:600">Settings</a>.
+            Showing <strong style="color:#e2e2f0">mock data</strong> below.
         </div>
     </div>
 </div>
-{% elif error == 'bad_key' %}
-<div style="background:#1a0e0e;border:1px solid #4a1a1a;border-radius:10px;padding:14px 18px;margin-bottom:18px;font-size:13px;color:#f87171">
-    ⚠ Invalid API key — go to <a href="/settings" style="color:var(--accent)">Settings</a> to update it. Showing mock data.
-</div>
 {% elif error == 'quota' %}
 <div style="background:#1a1800;border:1px solid #3a3000;border-radius:10px;padding:14px 18px;margin-bottom:18px;font-size:13px;color:#fbbf24">
-    ⚠ YouTube API daily quota exceeded. Showing mock data — quota resets at midnight Pacific Time.
-</div>
-{% elif error == 'network' %}
-<div style="background:#1a0e0e;border:1px solid #4a1a1a;border-radius:10px;padding:14px 18px;margin-bottom:18px;font-size:13px;color:#f87171">
-    ⚠ Could not reach YouTube API — check your network. Showing mock data.
+    ⚠ YouTube API quota exceeded. Resets at midnight Pacific Time.
 </div>
 {% elif error %}
 <div style="background:#1a0e0e;border:1px solid #4a1a1a;border-radius:10px;padding:14px 18px;margin-bottom:18px;font-size:13px;color:#f87171">
@@ -51,27 +41,48 @@
 </div>
 {% endif %}
 
+<!-- Loading overlay -->
+<div id="scan-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500;align-items:center;justify-content:center;flex-direction:column;gap:16px">
+    <div style="font-size:48px;animation:spin 1s linear infinite">⏳</div>
+    <div style="color:#fff;font-size:16px;font-weight:600">Scanning YouTube Indonesia...</div>
+    <div style="color:#a0a0b0;font-size:13px">Mengambil video trending terbaru</div>
+</div>
+<style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
+
 <!-- Toolbar -->
 <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
     <div style="font-size:13px;color:var(--text-muted)">
-        <strong style="color:var(--text)">{{ videos|length }}</strong> videos
-        &nbsp;·&nbsp; Min score: <strong style="color:var(--accent)">{{ min_score }}</strong>
+        <strong style="color:var(--text)" id="visible-count">{{ videos|length }}</strong> videos
         &nbsp;·&nbsp; Source: <strong style="color:var(--text)">{% if scanned %}YouTube Live (ID){% else %}Mock Data{% endif %}</strong>
     </div>
-    <div style="margin-left:auto;display:flex;gap:8px">
+    <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
         <select id="genre-filter" onchange="filterCards()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--text);outline:none">
             <option value="">All Genres</option>
-            <option value="Automotive">Automotive</option>
-            <option value="Food">Food</option>
-            <option value="DIY">DIY</option>
-            <option value="Tech">Tech</option>
-            <option value="Lifestyle">Lifestyle</option>
-            <option value="Gaming">Gaming</option>
-            <option value="Sports">Sports</option>
+            <option value="Automotive">🚗 Automotive</option>
+            <option value="Food">🍜 Food</option>
+            <option value="DIY">🔧 DIY</option>
+            <option value="Tech">💻 Tech</option>
+            <option value="Gaming">🎮 Gaming</option>
+            <option value="Music">🎵 Music</option>
+            <option value="Sports">⚽ Sports</option>
+            <option value="Travel">✈️ Travel</option>
+            <option value="Lifestyle">✨ Lifestyle</option>
+            <option value="Education">📚 Education</option>
+            <option value="News">📰 News</option>
+            <option value="Comedy">😂 Comedy</option>
+            <option value="Entertainment">🎬 Entertainment</option>
+            <option value="Podcast">🎙️ Podcast</option>
         </select>
         <select id="sort-filter" onchange="sortCards()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--text);outline:none">
             <option value="score">Sort: Viral Score</option>
             <option value="views">Sort: Views</option>
+        </select>
+        <select id="duration-filter" onchange="filterCards()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--text);outline:none">
+            <option value="">All Durations</option>
+            <option value="30">30s clips</option>
+            <option value="60">60s clips</option>
+            <option value="90">90s clips</option>
+            <option value="120">120s clips</option>
         </select>
     </div>
 </div>
@@ -79,8 +90,7 @@
 <!-- Video grid -->
 <div id="video-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">
     {% for v in videos %}
-    <div class="video-card" data-genre="{{ v.genre }}" data-score="{{ v.score }}" data-views="{{ v.views_raw }}">
-        <!-- Thumbnail -->
+    <div class="video-card" data-genre="{{ v.genre }}" data-score="{{ v.score }}" data-views="{{ v.views_raw }}" data-duration="{{ v.duration }}">
         <div style="position:relative">
             {% if v.thumbnail %}
             <img src="{{ v.thumbnail }}" alt="" style="width:100%;height:168px;object-fit:cover;border-radius:8px 8px 0 0;display:block">
@@ -97,16 +107,18 @@
                     {% elif v.genre == 'DIY' %}badge-diy
                     {% elif v.genre == 'Tech' %}badge-tech
                     {% elif v.genre == 'Gaming' %}badge-yellow
+                    {% elif v.genre == 'Music' %}badge-purple
+                    {% elif v.genre == 'Sports' %}badge-diy
+                    {% elif v.genre == 'Travel' %}badge-tech
+                    {% elif v.genre == 'Podcast' %}badge-food
                     {% else %}badge-life{% endif %}" style="font-size:11px">{{ v.genre }}</span>
             </div>
         </div>
 
-        <!-- Card body -->
         <div style="padding:14px">
             <div style="font-size:14px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ v.title }}</div>
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">{{ v.channel }}</div>
 
-            <!-- Stats row -->
             <div style="display:flex;gap:10px;margin-bottom:12px">
                 <div style="text-align:center;flex:1;background:var(--surface2);border-radius:6px;padding:6px 4px">
                     <div style="font-size:14px;font-weight:700;color:var(--text)">{{ v.views }}</div>
@@ -122,7 +134,6 @@
                 </div>
             </div>
 
-            <!-- Score bar -->
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                 <span style="font-size:11px;color:var(--text-faint)">Viral Score</span>
                 <div class="score-bar" style="flex:1">
@@ -131,7 +142,6 @@
                 <span class="score-num">{{ v.score }}</span>
             </div>
 
-            <!-- Action buttons -->
             <div style="display:flex;gap:7px">
                 <button
                     class="btn btn-primary queue-btn"
@@ -142,7 +152,7 @@
                     {% if v.in_queue %}✓ Queue{% else %}+ Queue{% endif %}
                 </button>
                 <button
-                    class="btn {% if v.has_captions %}btn-secondary{% else %}btn-secondary{% endif %} caption-btn"
+                    class="btn btn-secondary caption-btn"
                     style="flex:1;justify-content:center;font-size:12px;{% if v.has_captions %}border-color:var(--accent);color:var(--accent){% endif %}"
                     onclick="openCaption('{{ v.video_id }}','{{ v.title|replace("'","\\'") }}','{{ v.channel|replace("'","\\'") }}','{{ v.genre }}',{{ v.score }}, this)">
                     {% if v.has_captions %}✓ Caption{% else %}📝 Caption{% endif %}
@@ -153,37 +163,30 @@
     {% else %}
     <div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--text-faint)">
         <div style="font-size:36px;margin-bottom:12px">🔍</div>
-        <p style="font-size:14px">No videos match your filters. Lower the viral score threshold in <a href="/settings" style="color:var(--accent)">Settings</a>.</p>
+        <p style="font-size:14px">No videos found. Click <strong>Scan Now</strong> to fetch latest trending videos.</p>
     </div>
     {% endfor %}
 </div>
 
-<!-- ── Caption Modal ── -->
+<!-- Caption Modal -->
 <div id="caption-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;padding:20px">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
-
-        <!-- Modal header -->
         <div style="padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px">
             <div style="flex:1;min-width:0">
                 <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-faint);margin-bottom:4px">Caption Generator</div>
                 <div id="cap-modal-title" style="font-size:14px;font-weight:700;color:var(--text);line-height:1.3"></div>
             </div>
             <div style="display:flex;gap:8px;flex-shrink:0;align-items:center">
-                <button id="cap-regen-btn" class="btn btn-secondary btn-sm" onclick="generateCaption(true)">↺ Regenerate</button>
-                <button class="btn btn-secondary btn-sm btn-icon" onclick="closeCaption()">✕</button>
+                <button class="btn btn-secondary btn-sm" onclick="generateCaption(true)">↺ Regenerate</button>
+                <button class="btn btn-secondary btn-sm" onclick="closeCaption()">✕</button>
             </div>
         </div>
-
-        <!-- Loading state -->
         <div id="cap-loading" style="display:none;padding:40px;text-align:center">
             <div style="font-size:24px;margin-bottom:10px">⏳</div>
             <div style="font-size:13px;color:var(--text-muted)">Generating captions…</div>
         </div>
-
-        <!-- Captions content -->
         <div id="cap-content" style="padding:18px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:14px">
-
-            {% for key, label, chars, color in [("short","Short","< 150 chars","var(--green)"),("medium","Medium","150–300 chars","var(--accent)"),("long","Long","300+ chars","var(--yellow)")] %}
+            {% for key, label, chars, color in [("short","Short","< 150 chars","var(--green)"),("medium","Medium","150-300 chars","var(--accent)"),("long","Long","300+ chars","var(--yellow)")] %}
             <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
                     <div style="display:flex;align-items:center;gap:8px">
@@ -198,9 +201,7 @@
                 <div id="cap-{{ key }}" style="font-size:13px;color:var(--text-muted);line-height:1.6;white-space:pre-wrap;word-break:break-word"></div>
             </div>
             {% endfor %}
-
         </div>
-
         <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end">
             <button class="btn btn-secondary btn-sm" onclick="closeCaption()">Close</button>
         </div>
@@ -208,28 +209,34 @@
 </div>
 
 <!-- Toasts -->
-<div id="queue-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#1e1527;border:1px solid var(--accent);border-radius:10px;padding:12px 18px;font-size:13px;font-weight:600;color:var(--accent);z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)">
-    ✓ Added to queue
-</div>
-<div id="copy-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#0e2018;border:1px solid #1a4a28;border-radius:10px;padding:12px 18px;font-size:13px;font-weight:600;color:var(--green);z-index:400;box-shadow:0 4px 20px rgba(0,0,0,0.4)">
-    ✓ Copied to clipboard
-</div>
+<div id="queue-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#1e1527;border:1px solid var(--accent);border-radius:10px;padding:12px 18px;font-size:13px;font-weight:600;color:var(--accent);z-index:400">✓ Added to queue</div>
+<div id="copy-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#0e2018;border:1px solid #1a4a28;border-radius:10px;padding:12px 18px;font-size:13px;font-weight:600;color:var(--green);z-index:400">✓ Copied!</div>
 
 <script>
-// ── Scan button ──
 function startScan() {
     const btn = document.getElementById('scan-btn');
+    const overlay = document.getElementById('scan-overlay');
     btn.disabled = true;
     document.getElementById('scan-icon').textContent = '⏳';
-    document.getElementById('scan-label').textContent = 'Scanning…';
+    document.getElementById('scan-label').textContent = 'Scanning...';
+    overlay.style.display = 'flex';
+    document.getElementById('scan-form').submit();
 }
 
-// ── Filter / sort ──
 function filterCards() {
     const genre = document.getElementById('genre-filter').value;
-    document.querySelectorAll('.video-card').forEach(c =>
-        c.style.display = (!genre || c.dataset.genre === genre) ? '' : 'none');
+    const duration = document.getElementById('duration-filter').value;
+    let visible = 0;
+    document.querySelectorAll('.video-card').forEach(c => {
+        const genreMatch = !genre || c.dataset.genre === genre;
+        const durMatch = !duration || c.dataset.duration === duration;
+        const show = genreMatch && durMatch;
+        c.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    document.getElementById('visible-count').textContent = visible;
 }
+
 function sortCards() {
     const by = document.getElementById('sort-filter').value;
     const grid = document.getElementById('video-grid');
@@ -238,12 +245,11 @@ function sortCards() {
         .forEach(c => grid.appendChild(c));
 }
 
-// ── Queue ──
 async function addToQueue(btn) {
     const data = JSON.parse(btn.dataset.video);
-    btn.disabled = true; btn.textContent = '…';
+    btn.disabled = true; btn.textContent = '...';
     try {
-        const res  = await fetch('/queue/add', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+        const res = await fetch('/queue/add', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
         const json = await res.json();
         if (json.ok || res.status === 409) {
             btn.textContent = '✓ Queue';
@@ -251,62 +257,48 @@ async function addToQueue(btn) {
             btn.style.color = 'var(--accent)';
             btn.style.border = '1px solid var(--accent)';
             showToast('queue-toast');
-        } else { btn.disabled = false; btn.textContent = '+ Queue'; }
-    } catch { btn.disabled = false; btn.textContent = '+ Queue'; }
+        } else { btn.disabled=false; btn.textContent='+ Queue'; }
+    } catch { btn.disabled=false; btn.textContent='+ Queue'; }
 }
 
-// ── Caption modal ──
-let _capCurrentVideo = {};
-
+let _capVideo = {};
 function openCaption(videoId, title, channel, genre, score, btn) {
-    _capCurrentVideo = { videoId, title, channel, genre, score };
+    _capVideo = {videoId, title, channel, genre, score};
     document.getElementById('cap-modal-title').textContent = title;
     document.getElementById('caption-modal').style.display = 'flex';
-
-    // Check if already generated (btn text contains ✓)
     if (btn && btn.textContent.includes('✓')) {
-        // Load from server
         loadExistingCaption(videoId);
     } else {
         generateCaption(false);
     }
 }
-
 async function loadExistingCaption(videoId) {
     showCapLoading(true);
     try {
-        const res  = await fetch('/captions/' + videoId);
+        const res = await fetch('/captions/' + videoId);
         const data = await res.json();
         if (data.ok) { populateCaptions(data); return; }
     } catch {}
     generateCaption(false);
 }
-
 async function generateCaption(regen) {
     showCapLoading(true);
-    const { videoId, title, channel, genre, score } = _capCurrentVideo;
+    const {videoId, title, channel, genre, score} = _capVideo;
     try {
-        const res  = await fetch('/captions/generate', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ video_id:videoId, title, channel, genre, score })
-        });
+        const res = await fetch('/captions/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_id:videoId,title,channel,genre,score})});
         const data = await res.json();
         if (data.ok) {
             populateCaptions(data);
-            // Update caption button state
             document.querySelectorAll('.caption-btn').forEach(b => {
-                if (b.getAttribute('onclick').includes(`'${videoId}'`)) {
+                if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + videoId + "'")) {
                     b.textContent = '✓ Caption';
                     b.style.borderColor = 'var(--accent)';
                     b.style.color = 'var(--accent)';
                 }
             });
         }
-    } catch(e) {
-        showCapLoading(false);
-    }
+    } catch(e) { showCapLoading(false); }
 }
-
 function populateCaptions(data) {
     showCapLoading(false);
     ['short','medium','long'].forEach(key => {
@@ -315,32 +307,22 @@ function populateCaptions(data) {
         document.getElementById('cap-count-' + key).textContent = text.length + ' chars';
     });
 }
-
 function showCapLoading(show) {
-    document.getElementById('cap-loading').style.display  = show ? 'block' : 'none';
-    document.getElementById('cap-content').style.display  = show ? 'none'  : 'flex';
+    document.getElementById('cap-loading').style.display = show ? 'block' : 'none';
+    document.getElementById('cap-content').style.display = show ? 'none' : 'flex';
 }
-
-function closeCaption() {
-    document.getElementById('caption-modal').style.display = 'none';
-}
-
-document.getElementById('caption-modal').addEventListener('click', function(e) {
-    if (e.target === this) closeCaption();
-});
-
+function closeCaption() { document.getElementById('caption-modal').style.display = 'none'; }
+document.getElementById('caption-modal').addEventListener('click', function(e) { if(e.target===this) closeCaption(); });
 async function copyCaption(key) {
     const text = document.getElementById('cap-' + key).textContent;
-    try { await navigator.clipboard.writeText(text); } catch { }
+    try { await navigator.clipboard.writeText(text); } catch {}
     showToast('copy-toast');
 }
-
 function showToast(id) {
-    // Hide all toasts first
-    document.querySelectorAll('[id$="-toast"]').forEach(t => t.style.display = 'none');
+    document.querySelectorAll('[id$="-toast"]').forEach(t => t.style.display='none');
     const t = document.getElementById(id);
     t.style.display = 'block';
-    setTimeout(() => t.style.display = 'none', 2000);
+    setTimeout(() => t.style.display='none', 2000);
 }
 </script>
 {% endblock %}
