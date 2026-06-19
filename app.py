@@ -30,7 +30,7 @@ MOCK_VIDEOS = [
     {"video_id": "mock8",  "title": "ChatGPT Prompt That Makes You 10x Productive",     "channel": "AIWorkflow",    "thumbnail": "", "views": "11.4M","views_raw": 11400000, "likes": "620K", "published": "2025-06-07", "genre": "Tech",       "score": 99, "duration": 30},
     {"video_id": "mock9",  "title": "How I Saved $50k in 12 Months on a Normal Salary", "channel": "MoneyMoves",    "thumbnail": "", "views": "8.8M", "views_raw": 8800000,  "likes": "430K", "published": "2025-06-10", "genre": "Lifestyle",  "score": 93, "duration": 30},
     {"video_id": "mock10", "title": "Building a Hidden Room Behind a Bookshelf",         "channel": "SecretSpaces",  "thumbnail": "", "views": "15.6M","views_raw": 15600000, "likes": "820K", "published": "2025-06-06", "genre": "DIY",        "score": 99, "duration": 30},
-    {"video_id": "mock11", "title": "Turbocharging a Lawnmower (0–60 in 3s)",           "channel": "ChaosGarage",   "thumbnail": "", "views": "13.1M","views_raw": 13100000, "likes": "710K", "published": "2025-06-08", "genre": "Automotive", "score": 98, "duration": 30},
+    {"video_id": "mock11", "title": "Turbocharging a Lawnmower (0-60 in 3s)",           "channel": "ChaosGarage",   "thumbnail": "", "views": "13.1M","views_raw": 13100000, "likes": "710K", "published": "2025-06-08", "genre": "Automotive", "score": 98, "duration": 30},
     {"video_id": "mock12", "title": "Street Food I Found at 2AM in Tokyo",               "channel": "NightBites",    "thumbnail": "", "views": "3.5M", "views_raw": 3500000,  "likes": "95K",  "published": "2025-06-12", "genre": "Food",       "score": 78, "duration": 60},
 ]
 
@@ -43,7 +43,6 @@ def get_settings():
 
 
 def get_api_key():
-    """Check env first (Replit Secrets), then settings table."""
     key = os.environ.get("YOUTUBE_API_KEY", "").strip()
     if key:
         return key
@@ -90,10 +89,9 @@ def viral_finder():
 
     conn = get_db()
     queued_ids = {r["video_id"] for r in conn.execute("SELECT video_id FROM queue").fetchall()}
-    capped_ids  = {r["video_id"] for r in conn.execute("SELECT video_id FROM captions").fetchall()}
-conn.close()
+    capped_ids = {r["video_id"] for r in conn.execute("SELECT video_id FROM captions").fetchall()}
+    conn.close()
 
-    # Try real API on page load too
     error = None
     scanned = False
     if api_key:
@@ -107,7 +105,7 @@ conn.close()
         videos = filter_videos(MOCK_VIDEOS, min_score, genres)
 
     for v in videos:
-        v["in_queue"]     = v["video_id"] in queued_ids
+        v["in_queue"] = v["video_id"] in queued_ids
         v["has_captions"] = v["video_id"] in capped_ids
 
     return render_template("viral_finder.html", active="viral-finder",
@@ -125,7 +123,7 @@ def viral_scan():
 
     conn = get_db()
     queued_ids = {r["video_id"] for r in conn.execute("SELECT video_id FROM queue").fetchall()}
-    capped_ids  = {r["video_id"] for r in conn.execute("SELECT video_id FROM captions").fetchall()}
+    capped_ids = {r["video_id"] for r in conn.execute("SELECT video_id FROM captions").fetchall()}
     conn.close()
 
     error = None
@@ -152,7 +150,7 @@ def viral_scan():
             videos = filter_videos(MOCK_VIDEOS, min_score, genres)
 
     for v in videos:
-        v["in_queue"]     = v["video_id"] in queued_ids
+        v["in_queue"] = v["video_id"] in queued_ids
         v["has_captions"] = v["video_id"] in capped_ids
 
     return render_template("viral_finder.html", active="viral-finder",
@@ -161,16 +159,14 @@ def viral_scan():
                            min_score=min_score, genres=genres)
 
 
-# ── Caption routes ──────────────────────────────────────────────────────────
-
 @app.route("/captions/generate", methods=["POST"])
 def captions_generate():
-    data      = request.get_json(silent=True) or {}
-    video_id  = data.get("video_id", "").strip()
-    title     = data.get("title", "").strip()
-    channel   = data.get("channel", "Unnamed").strip()
-    genre     = data.get("genre", "Lifestyle").strip()
-    score     = int(data.get("score", 70))
+    data = request.get_json(silent=True) or {}
+    video_id = data.get("video_id", "").strip()
+    title = data.get("title", "").strip()
+    channel = data.get("channel", "Unnamed").strip()
+    genre = data.get("genre", "Lifestyle").strip()
+    score = int(data.get("score", 70))
 
     if not video_id or not title:
         return jsonify({"ok": False, "error": "missing fields"}), 400
@@ -195,28 +191,21 @@ def captions_get(video_id):
     conn.close()
     if not row:
         return jsonify({"ok": False}), 404
-    return jsonify({
-        "ok":     True,
-        "short":  row["short_cap"],
-        "medium": row["medium_cap"],
-        "long":   row["long_cap"],
-    })
+    return jsonify({"ok": True, "short": row["short_cap"], "medium": row["medium_cap"], "long": row["long_cap"]})
 
-
-# ── Queue routes ────────────────────────────────────────────────────────────
 
 @app.route("/queue/add", methods=["POST"])
 def queue_add():
-    data      = request.get_json(silent=True) or {}
-    video_id  = data.get("video_id", "").strip()
-    title     = data.get("title", "").strip()
-    channel   = data.get("channel", "").strip()
+    data = request.get_json(silent=True) or {}
+    video_id = data.get("video_id", "").strip()
+    title = data.get("title", "").strip()
+    channel = data.get("channel", "").strip()
     thumbnail = data.get("thumbnail", "").strip()
-    views     = data.get("views", "").strip()
-    likes     = data.get("likes", "").strip()
-    genre     = data.get("genre", "").strip()
-    score     = int(data.get("score", 0))
-    duration  = int(data.get("duration", 60))
+    views = data.get("views", "").strip()
+    likes = data.get("likes", "").strip()
+    genre = data.get("genre", "").strip()
+    score = int(data.get("score", 0))
+    duration = int(data.get("duration", 60))
 
     if not video_id or not title:
         return jsonify({"ok": False, "error": "missing fields"}), 400
@@ -240,8 +229,6 @@ def queue_add():
 def clip_editor():
     return render_template("clip_editor.html", active="clip-editor")
 
-
-# ── Clip upload / process / download ─────────────────────────────────────────
 
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 
@@ -271,14 +258,14 @@ def clip_preview(file_id):
 
 @app.route("/clip/process", methods=["POST"])
 def clip_process():
-    data       = request.get_json(silent=True) or {}
-    file_id    = data.get("file_id", "").strip()
-    start_sec  = float(data.get("start") or 0)
-    end_raw    = data.get("end")
-    end_sec    = float(end_raw) if end_raw else None
-    fmt        = data.get("format", "portrait")
-    quality    = data.get("quality", "1080p")
-    file_fmt   = (data.get("file_format") or "mp4").lower().lstrip(".")
+    data = request.get_json(silent=True) or {}
+    file_id = data.get("file_id", "").strip()
+    start_sec = float(data.get("start") or 0)
+    end_raw = data.get("end")
+    end_sec = float(end_raw) if end_raw else None
+    fmt = data.get("format", "portrait")
+    quality = data.get("quality", "1080p")
+    file_fmt = (data.get("file_format") or "mp4").lower().lstrip(".")
 
     if not file_id:
         return jsonify({"ok": False, "error": "file_id is required"}), 400
@@ -287,11 +274,7 @@ def clip_process():
     if err:
         return jsonify({"ok": False, "error": err}), 500
 
-    return jsonify({
-        "ok": True,
-        "download_url": f"/clip/download/{out_name}",
-        "filename": out_name,
-    })
+    return jsonify({"ok": True, "download_url": f"/clip/download/{out_name}", "filename": out_name})
 
 
 @app.route("/clip/download/<path:filename>")
@@ -302,8 +285,6 @@ def clip_download(filename):
         return "File not found", 404
     return send_file(path, as_attachment=True, download_name=safe)
 
-
-# ── OAuth credential setup ────────────────────────────────────────────────────
 
 OAUTH_PLATFORMS = {
     "tiktok": {
@@ -329,7 +310,7 @@ def oauth_save_creds(platform):
     if platform not in OAUTH_PLATFORMS:
         return redirect(url_for("accounts"))
     conn = get_db()
-    cfg  = OAUTH_PLATFORMS[platform]
+    cfg = OAUTH_PLATFORMS[platform]
     for field, _ in cfg["cred_fields"]:
         val = request.form.get(field, "").strip()
         if val:
@@ -347,22 +328,22 @@ def oauth_save_creds(platform):
 def oauth_connect(platform):
     if platform not in OAUTH_PLATFORMS:
         return redirect(url_for("accounts"))
-    cfg      = OAUTH_PLATFORMS[platform]
+    cfg = OAUTH_PLATFORMS[platform]
     settings = get_settings()
-    creds    = {f: settings.get(f"oauth_{platform}_{f}", "") for f, _ in cfg["cred_fields"]}
+    creds = {f: settings.get(f"oauth_{platform}_{f}", "") for f, _ in cfg["cred_fields"]}
     if not all(creds.values()):
         flash(f"Save {cfg['label']} API credentials first.", "error")
         return redirect(url_for("accounts"))
-    domain       = os.environ.get("REPLIT_DOMAINS", "localhost:8000").split(",")[0].strip()
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", os.environ.get("REPLIT_DOMAINS", "localhost:8000")).split(",")[0].strip()
     redirect_uri = f"https://{domain}/oauth/callback/{platform}"
-    state        = _secrets.token_urlsafe(16)
-    auth_url     = cfg["auth_url"].format(redirect_uri=redirect_uri, state=state, **creds)
+    state = _secrets.token_urlsafe(16)
+    auth_url = cfg["auth_url"].format(redirect_uri=redirect_uri, state=state, **creds)
     return redirect(auth_url)
 
 
 @app.route("/oauth/callback/<platform>")
 def oauth_callback(platform):
-    code  = request.args.get("code", "")
+    code = request.args.get("code", "")
     error = request.args.get("error", "")
     if error or not code:
         flash(f"OAuth cancelled or failed: {error or 'no code received'}", "error")
@@ -374,7 +355,7 @@ def oauth_callback(platform):
     )
     conn.commit()
     conn.close()
-    flash(f"{platform.title()} connected! Token exchange is configured per-platform.", "success")
+    flash(f"{platform.title()} connected!", "success")
     return redirect(url_for("accounts"))
 
 
@@ -394,7 +375,7 @@ def auto_upload():
     queue = conn.execute("SELECT * FROM queue ORDER BY sort_order ASC, added_at ASC").fetchall()
     slots = conn.execute("SELECT * FROM schedule ORDER BY id").fetchall()
     pending_count = sum(1 for r in queue if r["status"] == "pending")
-    posted_count  = sum(1 for r in queue if r["status"] == "posted")
+    posted_count = sum(1 for r in queue if r["status"] == "posted")
     conn.close()
     return render_template("auto_upload.html", active="auto-upload",
                            queue=queue, slots=slots,
@@ -438,7 +419,7 @@ def queue_mark_posted(item_id):
     conn.execute("UPDATE queue SET status='posted' WHERE id=?", (item_id,))
     conn.commit()
     pending = conn.execute("SELECT COUNT(*) as c FROM queue WHERE status='pending'").fetchone()["c"]
-    posted  = conn.execute("SELECT COUNT(*) as c FROM queue WHERE status='posted'").fetchone()["c"]
+    posted = conn.execute("SELECT COUNT(*) as c FROM queue WHERE status='posted'").fetchone()["c"]
     conn.close()
     return jsonify({"ok": True, "pending_count": pending, "posted_count": posted})
 
@@ -449,7 +430,7 @@ def queue_mark_pending(item_id):
     conn.execute("UPDATE queue SET status='pending' WHERE id=?", (item_id,))
     conn.commit()
     pending = conn.execute("SELECT COUNT(*) as c FROM queue WHERE status='pending'").fetchone()["c"]
-    posted  = conn.execute("SELECT COUNT(*) as c FROM queue WHERE status='posted'").fetchone()["c"]
+    posted = conn.execute("SELECT COUNT(*) as c FROM queue WHERE status='posted'").fetchone()["c"]
     conn.close()
     return jsonify({"ok": True, "pending_count": pending, "posted_count": posted})
 
@@ -474,19 +455,16 @@ def queue_update_notes(item_id):
     return jsonify({"ok": True})
 
 
-# ── Accounts routes ─────────────────────────────────────────────────────────
-
 @app.route("/accounts")
 def accounts():
     conn = get_db()
     rows = conn.execute("SELECT * FROM accounts ORDER BY id").fetchall()
-    s    = get_settings()
-    # Build OAuth status for TikTok, Instagram, YouTube
+    s = get_settings()
     oauth_status = {}
     for pid, cfg in OAUTH_PLATFORMS.items():
         first_field = cfg["cred_fields"][0][0]
-        has_creds   = bool(s.get(f"oauth_{pid}_{first_field}", ""))
-        has_token   = bool(s.get(f"oauth_{pid}_access_token", ""))
+        has_creds = bool(s.get(f"oauth_{pid}_{first_field}", ""))
+        has_token = bool(s.get(f"oauth_{pid}_access_token", ""))
         oauth_status[pid] = {"has_creds": has_creds, "has_token": has_token}
     conn.close()
     return render_template("accounts.html", active="accounts", accounts=rows, oauth_status=oauth_status)
@@ -528,10 +506,8 @@ def accounts_delete(account_id):
     return redirect(url_for("accounts"))
 
 
-# ── Schedule helpers ─────────────────────────────────────────────────────────
-
 DEFAULT_TIMES = ["12:00", "16:00", "20:00"]
-DAY_NAMES  = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 PLATFORM_ICONS = {"TikTok": "📱", "Instagram": "📸", "YouTube": "🖥", "All": "🌐"}
 
@@ -557,23 +533,19 @@ def _auto_update_statuses(conn):
     conn.commit()
 
 
-# ── Schedule routes ─────────────────────────────────────────────────────────
-
 @app.route("/schedule")
 def schedule():
     week_start = _week_start_from_str(request.args.get("week_start"))
-    week_end   = week_start + timedelta(days=6)
+    week_end = week_start + timedelta(days=6)
 
     conn = get_db()
     _auto_update_statuses(conn)
 
     posts = conn.execute(
-        "SELECT * FROM scheduled_posts WHERE schedule_date >= ? AND schedule_date <= ? "
-        "ORDER BY schedule_date, schedule_time",
+        "SELECT * FROM scheduled_posts WHERE schedule_date >= ? AND schedule_date <= ? ORDER BY schedule_date, schedule_time",
         (week_start.isoformat(), week_end.isoformat())
     ).fetchall()
 
-    # All future posts for list view
     all_posts = conn.execute(
         "SELECT * FROM scheduled_posts ORDER BY schedule_date ASC, schedule_time ASC"
     ).fetchall()
@@ -582,7 +554,6 @@ def schedule():
         "SELECT * FROM queue WHERE status='pending' ORDER BY sort_order ASC, added_at ASC"
     ).fetchall()
 
-    # Weekly summary
     summary = {"scheduled": 0, "done": 0, "failed": 0}
     for p in posts:
         if p["status"] in summary:
@@ -599,17 +570,17 @@ def schedule():
         all_times = sorted(set(DEFAULT_TIMES) | set(day_posts.keys()))
         slots = [{"time": t, "post": day_posts.get(t)} for t in all_times]
         calendar_data.append({
-            "date_str":   day_str,
-            "day_name":   DAY_NAMES[i],
-            "day_num":    day.day,
+            "date_str": day_str,
+            "day_name": DAY_NAMES[i],
+            "day_num": day.day,
             "month_name": MONTH_NAMES[day.month - 1],
-            "is_today":   day == today,
+            "is_today": day == today,
             "is_weekend": i >= 5,
-            "slots":      slots,
+            "slots": slots,
         })
 
     week_label = (
-        f"{MONTH_NAMES[week_start.month-1]} {week_start.day} – "
+        f"{MONTH_NAMES[week_start.month-1]} {week_start.day} - "
         f"{MONTH_NAMES[week_end.month-1]} {week_end.day}, {week_end.year}"
     )
     prev_week = (week_start - timedelta(weeks=1)).isoformat()
@@ -629,14 +600,14 @@ def schedule():
 
 @app.route("/schedule/add", methods=["POST"])
 def schedule_add():
-    post_id   = request.form.get("post_id", "").strip()
-    sdate     = request.form.get("schedule_date", "").strip()
-    stime     = request.form.get("schedule_time", "").strip()
-    platform  = request.form.get("platform", "All").strip()
-    video_id  = request.form.get("video_id", "").strip() or None
-    clip_title= request.form.get("clip_title", "").strip() or None
-    caption   = request.form.get("caption", "").strip() or None
-    week_start= request.form.get("week_start", "")
+    post_id = request.form.get("post_id", "").strip()
+    sdate = request.form.get("schedule_date", "").strip()
+    stime = request.form.get("schedule_time", "").strip()
+    platform = request.form.get("platform", "All").strip()
+    video_id = request.form.get("video_id", "").strip() or None
+    clip_title = request.form.get("clip_title", "").strip() or None
+    caption = request.form.get("caption", "").strip() or None
+    week_start = request.form.get("week_start", "")
 
     if not sdate or not stime:
         flash("Date and time are required.", "error")
@@ -674,7 +645,7 @@ def schedule_delete(post_id):
 @app.route("/schedule/auto-fill", methods=["POST"])
 def schedule_auto_fill():
     week_start = _week_start_from_str(request.form.get("week_start"))
-    week_end   = week_start + timedelta(days=6)
+    week_end = week_start + timedelta(days=6)
 
     conn = get_db()
     queue_items = conn.execute(
@@ -710,7 +681,7 @@ def schedule_auto_fill():
 @app.route("/schedule/copy-week", methods=["POST"])
 def schedule_copy_week():
     week_start = _week_start_from_str(request.form.get("week_start"))
-    week_end   = week_start + timedelta(days=6)
+    week_end = week_start + timedelta(days=6)
     next_start = week_start + timedelta(weeks=1)
 
     conn = get_db()
@@ -742,7 +713,7 @@ def schedule_copy_week():
 @app.route("/schedule/clear-week", methods=["POST"])
 def schedule_clear_week():
     week_start = _week_start_from_str(request.form.get("week_start"))
-    week_end   = (week_start + timedelta(days=6)).isoformat()
+    week_end = (week_start + timedelta(days=6)).isoformat()
     conn = get_db()
     conn.execute(
         "DELETE FROM scheduled_posts WHERE schedule_date >= ? AND schedule_date <= ?",
@@ -754,15 +725,13 @@ def schedule_clear_week():
     return redirect(url_for("schedule") + f"?week_start={week_start.isoformat()}")
 
 
-# ── Settings routes ─────────────────────────────────────────────────────────
-
 @app.route("/settings")
 def settings():
     s = get_settings()
     env_key_set = bool(os.environ.get("YOUTUBE_API_KEY", "").strip())
-    db_key      = s.get("youtube_api_key", "").strip()
-    db_key_set  = bool(db_key)
-    masked_key  = ""  # never pre-fill for security
+    db_key = s.get("youtube_api_key", "").strip()
+    db_key_set = bool(db_key)
+    masked_key = ""
     api_key_configured = env_key_set or db_key_set
     return render_template("settings.html", active="settings", settings=s,
                            env_key_set=env_key_set, db_key_set=db_key_set,
@@ -772,16 +741,16 @@ def settings():
 
 @app.route("/settings/update", methods=["POST"])
 def settings_update():
-    genres          = ",".join(request.form.getlist("genres")) or "Tech"
-    clip_duration   = request.form.get("clip_duration", "60")
+    genres = ",".join(request.form.getlist("genres")) or "Tech"
+    clip_duration = request.form.get("clip_duration", "60")
     viral_score_min = request.form.get("viral_score_min", "60")
-    clips_per_day   = request.form.get("clips_per_day", "3")
+    clips_per_day = request.form.get("clips_per_day", "3")
     conn = get_db()
     for key, val in [
-        ("genres",          genres),
-        ("clip_duration",   clip_duration),
+        ("genres", genres),
+        ("clip_duration", clip_duration),
         ("viral_score_min", viral_score_min),
-        ("clips_per_day",   clips_per_day),
+        ("clips_per_day", clips_per_day),
     ]:
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, val))
     conn.commit()
