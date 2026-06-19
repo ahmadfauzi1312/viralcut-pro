@@ -84,7 +84,7 @@ def dashboard():
 def viral_finder():
     api_key = get_api_key()
     settings = get_settings()
-    min_score = int(settings.get("viral_score_min", 60))
+    min_score = int(settings.get("viral_score_min", 45))
     genres = settings.get("genres", "Automotive,Food,DIY,Tech,Lifestyle")
 
     conn = get_db()
@@ -96,7 +96,7 @@ def viral_finder():
     scanned = False
     if api_key:
         try:
-            raw = fetch_trending(api_key, region="ID", max_results=20)
+            raw = fetch_trending(api_key, region="ID", max_results=50)
             videos = filter_videos(raw, min_score, genres)
             scanned = True
         except Exception:
@@ -118,7 +118,7 @@ def viral_finder():
 def viral_scan():
     api_key = get_api_key()
     settings = get_settings()
-    min_score = int(settings.get("viral_score_min", 60))
+    min_score = int(settings.get("viral_score_min", 45))
     genres = settings.get("genres", "Automotive,Food,DIY,Tech,Lifestyle")
 
     conn = get_db()
@@ -135,7 +135,7 @@ def viral_scan():
         videos = filter_videos(MOCK_VIDEOS, min_score, genres)
     else:
         try:
-            raw = fetch_trending(api_key, region="ID", max_results=20)
+            raw = fetch_trending(api_key, region="ID", max_results=50)
             videos = filter_videos(raw, min_score, genres)
             scanned = True
         except req_lib.exceptions.HTTPError as e:
