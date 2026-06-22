@@ -378,6 +378,3 @@ ENDOFFILE
 echo "Done"
 python3 -c "import ast; ast.parse(open('/mnt/user-data/outputs/link_analyzer.py').read()); print('Syntax OK! Lines:', len(open('/mnt/user-data/outputs/link_analyzer.py').readlines()))"
 
-Selesai
-
-Anda kehabisan pesan gratis sampai 13.40
