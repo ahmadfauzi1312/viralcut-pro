@@ -362,6 +362,3 @@ def fetch_all_sources(api_key: str, region: str = "ID", min_score: int = 45) -> 
     result = [v for v in all_videos if v["score"] >= min_score]
     result.sort(key=lambda v: v["score"], reverse=True)
     return result
-ENDOFFILE
-echo "Done"
-python3 -c "import ast; ast.parse(open('/mnt/user-data/outputs/youtube.py').read()); print('Syntax OK! Lines:', len(open('/mnt/user-data/outputs/youtube.py').readlines()))"
