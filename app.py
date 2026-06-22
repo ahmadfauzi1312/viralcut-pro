@@ -5,7 +5,7 @@ import requests as req_lib
 from datetime import date, timedelta, datetime
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, send_file
 from db import init_db, get_db
-from youtube import fetch_trending
+from youtube import fetch_trending, fetch_all_sources
 from captions import generate as gen_captions
 from clip_processor import (
     process_clip as ffmpeg_process,
@@ -96,8 +96,8 @@ def viral_finder():
     scanned = False
     if api_key:
         try:
-            raw = fetch_trending(api_key, region="ID", max_results=50)
-            videos = filter_videos(raw, min_score, genres)
+            raw = fetch_all_sources(api_key, region="ID", min_score=min_score)
+            videos = raw
             scanned = True
         except Exception:
             videos = filter_videos(MOCK_VIDEOS, min_score, genres)
@@ -135,8 +135,8 @@ def viral_scan():
         videos = filter_videos(MOCK_VIDEOS, min_score, genres)
     else:
         try:
-            raw = fetch_trending(api_key, region="ID", max_results=50)
-            videos = filter_videos(raw, min_score, genres)
+            raw = fetch_all_sources(api_key, region="ID", min_score=min_score)
+            videos = raw
             scanned = True
         except req_lib.exceptions.HTTPError as e:
             status = e.response.status_code if e.response is not None else 0
