@@ -6,6 +6,7 @@ from datetime import date, timedelta, datetime
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, send_file
 from db import init_db, get_db
 from youtube import fetch_trending, fetch_all_sources
+from analyzer import analyze_links
 from captions import generate as gen_captions
 from clip_processor import (
     process_clip as ffmpeg_process,
@@ -782,7 +783,24 @@ def settings_clear_api_key():
     flash("API key cleared.", "success")
     return redirect(url_for("settings"))
 
+@app.route("/analyzer")
+def analyzer():
+    return render_template("link_analyzer.html", active="analyzer")
 
+@app.route("/analyzer/analyze", methods=["POST"])
+def analyzer_analyze():
+    api_key = get_api_key()
+    if not api_key:
+        return jsonify({"ok": False, "error": "YouTube API key not configured. Go to Settings."}), 400
+    data = request.get_json(silent=True) or {}
+    urls = data.get("urls", [])
+    if not urls:
+        return jsonify({"ok": False, "error": "No URLs provided"}), 400
+    try:
+        results = analyze_links(api_key, urls)
+        return jsonify({"ok": True, "results": results})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
