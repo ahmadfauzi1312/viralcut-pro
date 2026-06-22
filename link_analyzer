@@ -1,0 +1,385 @@
+cat > /mnt/user-data/outputs/link_analyzer.py << 'ENDOFFILE'
+import re
+import requests
+
+YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
+
+def extract_video_id(url: str) -> str:
+    """Extract YouTube video ID from various URL formats."""
+    patterns = [
+        r'(?:v=|/v/|youtu\.be/|/embed/|/shorts/)([a-zA-Z0-9_-]{11})',
+        r'^([a-zA-Z0-9_-]{11})$',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url.strip())
+        if match:
+            return match.group(1)
+    return ""
+
+
+def get_video_details(api_key: str, video_ids: list) -> list:
+    """Fetch full video details from YouTube API."""
+    if not video_ids:
+        return []
+    params = {
+        "part": "snippet,statistics,contentDetails",
+        "id": ",".join(video_ids),
+        "key": api_key,
+    }
+    resp = requests.get(f"{YOUTUBE_API_BASE}/videos", params=params, timeout=12)
+    resp.raise_for_status()
+    return resp.json().get("items", [])
+
+
+def parse_duration_seconds(iso_duration: str) -> int:
+    """Convert ISO 8601 duration to seconds."""
+    match = re.match(
+        r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?',
+        iso_duration or ""
+    )
+    if not match:
+        return 0
+    h = int(match.group(1) or 0)
+    m = int(match.group(2) or 0)
+    s = int(match.group(3) or 0)
+    return h * 3600 + m * 60 + s
+
+
+def analyze_viral_potential(views: int, likes: int, comments: int,
+                             duration_sec: int, published: str) -> dict:
+    """
+    Score each video across multiple viral dimensions.
+    Returns scores and a list of recommended clip segments.
+    """
+    from datetime import date, datetime
+
+    # Engagement rate
+    engagement = (likes + comments) / max(views, 1) * 100
+
+    # View velocity (views per day since published)
+    try:
+        pub_date = datetime.strptime(published[:10], "%Y-%m-%d").date()
+        days_old = max((date.today() - pub_date).days, 1)
+    except Exception:
+        days_old = 30
+    view_velocity = views / days_old
+
+    # Score components (0-100 each)
+    # 1. View score
+    if views >= 10_000_000:   view_score = 100
+    elif views >= 5_000_000:  view_score = 85
+    elif views >= 2_000_000:  view_score = 70
+    elif views >= 1_000_000:  view_score = 60
+    elif views >= 500_000:    view_score = 50
+    elif views >= 100_000:    view_score = 35
+    elif views >= 50_000:     view_score = 25
+    else:                     view_score = 10
+
+    # 2. Engagement score
+    if engagement >= 10:    eng_score = 100
+    elif engagement >= 6:   eng_score = 85
+    elif engagement >= 4:   eng_score = 70
+    elif engagement >= 2:   eng_score = 55
+    elif engagement >= 1:   eng_score = 40
+    else:                   eng_score = 20
+
+    # 3. Velocity score
+    if view_velocity >= 500_000:   vel_score = 100
+    elif view_velocity >= 100_000: vel_score = 85
+    elif view_velocity >= 50_000:  vel_score = 70
+    elif view_velocity >= 10_000:  vel_score = 55
+    elif view_velocity >= 1_000:   vel_score = 40
+    else:                          vel_score = 20
+
+    # 4. Duration score (shorter = more clippable)
+    if duration_sec <= 180:        dur_score = 90
+    elif duration_sec <= 600:      dur_score = 75
+    elif duration_sec <= 1200:     dur_score = 60
+    elif duration_sec <= 3600:     dur_score = 45
+    else:                          dur_score = 30
+
+    # Weighted total
+    total = int(view_score * 0.35 + eng_score * 0.30 + vel_score * 0.25 + dur_score * 0.10)
+
+    # Clip segment recommendations based on video duration
+    segments = generate_clip_segments(duration_sec, total)
+
+    return {
+        "viral_score": min(100, total),
+        "view_score": view_score,
+        "engagement_score": eng_score,
+        "velocity_score": vel_score,
+        "engagement_rate": round(engagement, 2),
+        "view_velocity": int(view_velocity),
+        "days_old": days_old,
+        "segments": segments,
+    }
+
+
+def generate_clip_segments(duration_sec: int, viral_score: int) -> list:
+    """
+    Generate recommended clip segments with timestamps.
+    Strategy: hook (opening), peak moments, closing CTA.
+    """
+    segments = []
+
+    if duration_sec <= 0:
+        return segments
+
+    # Determine clip duration based on viral score
+    if viral_score >= 85:
+        clip_dur = 30
+    elif viral_score >= 70:
+        clip_dur = 60
+    elif viral_score >= 55:
+        clip_dur = 90
+    else:
+        clip_dur = 120
+
+    def fmt(sec):
+        m, s = divmod(int(sec), 60)
+        h, m = divmod(m, 60)
+        if h:
+            return f"{h}:{m:02d}:{s:02d}"
+        return f"{m}:{s:02d}"
+
+    # Segment 1: Hook — first 15-30 seconds (always most important)
+    hook_end = min(clip_dur, duration_sec)
+    segments.append({
+        "id": "hook",
+        "label": "🎯 Hook / Opening",
+        "description": "Bagian pembuka yang menarik perhatian — paling penting untuk short clip",
+        "start_sec": 0,
+        "end_sec": hook_end,
+        "start_fmt": "0:00",
+        "end_fmt": fmt(hook_end),
+        "clip_duration": clip_dur,
+        "potential": "Sangat Tinggi",
+        "potential_color": "#10b981",
+        "reason": "Detik pertama menentukan apakah viewer lanjut nonton atau scroll",
+        "recommended_for": ["TikTok", "Reels", "Shorts"],
+    })
+
+    # Segment 2: Peak moment — 20-35% into video
+    if duration_sec > clip_dur * 2:
+        peak_start = int(duration_sec * 0.20)
+        peak_end = min(peak_start + clip_dur, duration_sec)
+        segments.append({
+            "id": "peak",
+            "label": "🔥 Momen Puncak",
+            "description": "Bagian paling menarik / klimaks konten",
+            "start_sec": peak_start,
+            "end_sec": peak_end,
+            "start_fmt": fmt(peak_start),
+            "end_fmt": fmt(peak_end),
+            "clip_duration": clip_dur,
+            "potential": "Tinggi",
+            "potential_color": "#f59e0b",
+            "reason": "Biasanya bagian reveal, reaction, atau poin utama konten",
+            "recommended_for": ["TikTok", "Reels"],
+        })
+
+    # Segment 3: Mid insight — 45-60% into video
+    if duration_sec > clip_dur * 3:
+        mid_start = int(duration_sec * 0.45)
+        mid_end = min(mid_start + clip_dur, duration_sec)
+        segments.append({
+            "id": "insight",
+            "label": "💡 Key Insight",
+            "description": "Poin informasi atau tips terpenting dari video",
+            "start_sec": mid_start,
+            "end_sec": mid_end,
+            "start_fmt": fmt(mid_start),
+            "end_fmt": fmt(mid_end),
+            "clip_duration": clip_dur,
+            "potential": "Tinggi",
+            "potential_color": "#8b5cf6",
+            "reason": "Konten informatif / edukatif sangat cocok untuk format pendek",
+            "recommended_for": ["Shorts", "Reels"],
+        })
+
+    # Segment 4: CTA / Closing — last portion
+    if duration_sec > clip_dur * 2:
+        cta_start = max(0, duration_sec - clip_dur - 10)
+        cta_end = max(cta_start + clip_dur, duration_sec)
+        cta_end = min(cta_end, duration_sec)
+        segments.append({
+            "id": "cta",
+            "label": "📢 Call to Action",
+            "description": "Bagian penutup dengan ajakan subscribe / follow / beli",
+            "start_sec": int(cta_start),
+            "end_sec": int(cta_end),
+            "start_fmt": fmt(cta_start),
+            "end_fmt": fmt(cta_end),
+            "clip_duration": clip_dur,
+            "potential": "Sedang",
+            "potential_color": "#3b82f6",
+            "reason": "Bagus untuk konten brand awareness dan promosi",
+            "recommended_for": ["YouTube Shorts"],
+        })
+
+    return segments
+
+
+def generate_clip_captions(title: str, genre: str, segment_label: str,
+                            channel: str, viral_score: int) -> dict:
+    """Generate platform-optimized captions for each clip segment."""
+
+    # Detect content language hints
+    is_id = any(w in title.lower() for w in [
+        "nya", "ini", "itu", "yang", "dan", "ke", "di", "dari",
+        "dengan", "untuk", "tidak", "bisa", "jadi", "mau", "gak"
+    ])
+
+    genre_hooks = {
+        "Food":        ["Wajib cobain! 🍜", "Enak banget! 😋", "Food goals! 🔥", "Hits banget nih! ✨"],
+        "Tech":        ["Game changer! 💻", "Wajib tau ini! 🤯", "Teknologi terkini! ⚡", "Harus coba! 🚀"],
+        "Automotive":  ["Keren abis! 🚗", "Otomotif goals! 🔥", "Wajib nonton! 💨", "Next level! ⚡"],
+        "DIY":         ["Bisa bikin sendiri! 🔧", "Life hack! ✨", "Tutorial mudah! 🛠️", "Kreatif banget! 💡"],
+        "Gaming":      ["Gaming time! 🎮", "Level up! ⚔️", "Epic banget! 🔥", "Must watch! 👾"],
+        "Travel":      ["Travel goals! ✈️", "Destinasi impian! 🌏", "Wajib ke sini! 📍", "Hidden gem! 💎"],
+        "Education":   ["Wajib tau! 📚", "Info penting! 💡", "Fakta menarik! 🧠", "Belajar yuk! ✨"],
+        "Lifestyle":   ["Relate banget! ✨", "Goals! 💫", "Inspiratif! 🌟", "Wajib coba! 🔥"],
+        "Music":       ["Langsung FYP! 🎵", "Eargasm! 🎧", "Hits baru! 🔥", "Full video! 🎤"],
+        "Sports":      ["Luar biasa! ⚽", "Epic moment! 🏆", "Skill level dewa! 💪", "Must watch! 🔥"],
+        "Comedy":      ["Auto ngakak! 😂", "Bikin ketawa! 🤣", "Receh abis! 😆", "Wajib nonton! 🤩"],
+        "News":        ["Info penting! 📰", "Update terkini! 🔔", "Wajib tau! ⚡", "Breaking! 🚨"],
+        "Podcast":     ["Insight berharga! 🎙️", "Wajib dengerin! 💡", "Inspiratif! ✨", "Full podcast! 🎧"],
+        "Entertainment": ["Seru banget! 🎬", "Wajib nonton! ✨", "Epic! 🔥", "Entertainment goals! 🌟"],
+    }
+
+    genre_hashtags = {
+        "Food":        "#kuliner #foodie #makananindonesia #foodviral #jajan #foodtok",
+        "Tech":        "#teknologi #gadget #tech #iphone #android #techtok",
+        "Automotive":  "#otomotif #mobil #motor #automotive #modif #cars",
+        "DIY":         "#diy #tutorial #kreasi #handmade #craft #diytok",
+        "Gaming":      "#gaming #game #esport #mlbb #freefire #gamer",
+        "Travel":      "#travel #wisata #liburan #indonesia #travelvlog #explore",
+        "Education":   "#edukasi #belajar #tips #motivasi #ilmu #education",
+        "Lifestyle":   "#lifestyle #vlog #daily #tips #ootd #life",
+        "Music":       "#musik #lagu #viral #trending #music #kpop",
+        "Sports":      "#olahraga #sports #bola #basket #badminton #athlete",
+        "Comedy":      "#lucu #funny #humor #comedy #ngakak #receh",
+        "News":        "#berita #news #update #terkini #viral #info",
+        "Podcast":     "#podcast #inspirasi #motivasi #bisnis #sukses #mindset",
+        "Entertainment": "#entertainment #artis #film #drama #seru #hiburan",
+    }
+
+    hooks = genre_hooks.get(genre, ["Viral! 🔥", "Wajib nonton! ✨", "Amazing! 🌟"])
+    hashtags = genre_hashtags.get(genre, "#viral #trending #indonesia #fyp")
+    hook = hooks[viral_score % len(hooks)]
+
+    short = f"{hook} {title[:80]}{'...' if len(title) > 80 else ''}\n\n{hashtags} #viral #fyp"
+
+    medium = (f"{hook}\n\n"
+              f"{'Konten' if is_id else 'Content'} dari {channel} ini "
+              f"{'layak banget untuk ditonton' if is_id else 'is definitely worth watching'}! "
+              f"{'Bagian' if is_id else 'The'} {segment_label.split('/')[-1].strip()} "
+              f"{'ini yang paling menarik' if is_id else 'part is the most interesting'}.\n\n"
+              f"{'Simpan video ini dan share ke teman-temanmu!' if is_id else 'Save and share with your friends!'}\n\n"
+              f"{hashtags} #viral #fyp #trending")
+
+    long = (f"{hook}\n\n"
+            f"{'Kalian harus nonton video dari' if is_id else 'You have to watch this video from'} "
+            f"{channel}! "
+            f"{'Ini salah satu konten terbaik yang wajib kalian tonton' if is_id else 'This is one of the best content you must watch'}.\n\n"
+            f"✅ {'Viral Score' if not is_id else 'Skor Viral'}: {viral_score}/100\n"
+            f"✅ {'Segment' if not is_id else 'Segmen'}: {segment_label}\n"
+            f"✅ {'Genre' if not is_id else 'Kategori'}: {genre}\n\n"
+            f"{'Jangan lupa like, comment, dan follow untuk konten viral lainnya!' if is_id else 'Like, comment, and follow for more viral content!'}\n\n"
+            f"{hashtags} #viral #fyp #trending #indonesia #creator")
+
+    return {"short": short, "medium": medium, "long": long}
+
+
+def analyze_links(api_key: str, urls: list) -> list:
+    """
+    Main function: analyze multiple YouTube links,
+    return sorted segments with viral potential.
+    """
+    # Extract video IDs
+    video_ids = []
+    url_map = {}
+    for url in urls:
+        vid_id = extract_video_id(url.strip())
+        if vid_id and vid_id not in url_map:
+            video_ids.append(vid_id)
+            url_map[vid_id] = url.strip()
+
+    if not video_ids:
+        return []
+
+    # Fetch details from YouTube API
+    items = get_video_details(api_key, video_ids)
+
+    results = []
+    for item in items:
+        snippet = item.get("snippet", {})
+        stats = item.get("statistics", {})
+        content = item.get("contentDetails", {})
+
+        video_id = item.get("id", "")
+        title = snippet.get("title", "")
+        channel = snippet.get("channelTitle", "")
+        published = snippet.get("publishedAt", "")[:10]
+        description = snippet.get("description", "")[:500]
+
+        views = int(stats.get("viewCount", 0))
+        likes = int(stats.get("likeCount", 0))
+        comments = int(stats.get("commentCount", 0))
+
+        duration_iso = content.get("duration", "PT0S")
+        duration_sec = parse_duration_seconds(duration_iso)
+
+        thumbs = snippet.get("thumbnails", {})
+        thumbnail = (thumbs.get("maxres") or thumbs.get("high") or thumbs.get("medium") or {}).get("url", "")
+
+        from youtube import detect_genre, format_count
+        cat_id = snippet.get("categoryId", "")
+        genre = detect_genre(cat_id, title)
+
+        analysis = analyze_viral_potential(views, likes, comments, duration_sec, published)
+
+        # Generate captions for each segment
+        for seg in analysis["segments"]:
+            seg["captions"] = generate_clip_captions(
+                title, genre, seg["label"], channel, analysis["viral_score"]
+            )
+
+        from youtube import format_count
+        results.append({
+            "video_id": video_id,
+            "url": url_map.get(video_id, f"https://youtu.be/{video_id}"),
+            "title": title,
+            "channel": channel,
+            "thumbnail": thumbnail,
+            "published": published,
+            "description": description,
+            "views": format_count(views),
+            "views_raw": views,
+            "likes": format_count(likes),
+            "likes_raw": likes,
+            "comments": format_count(comments),
+            "genre": genre,
+            "duration_sec": duration_sec,
+            "duration_fmt": f"{duration_sec // 60}:{duration_sec % 60:02d}",
+            "viral_score": analysis["viral_score"],
+            "view_score": analysis["view_score"],
+            "engagement_score": analysis["engagement_score"],
+            "velocity_score": analysis["velocity_score"],
+            "engagement_rate": analysis["engagement_rate"],
+            "view_velocity": analysis["view_velocity"],
+            "days_old": analysis["days_old"],
+            "segments": analysis["segments"],
+        })
+
+    # Sort by viral score descending
+    results.sort(key=lambda x: x["viral_score"], reverse=True)
+    return results
+ENDOFFILE
+echo "Done"
+python3 -c "import ast; ast.parse(open('/mnt/user-data/outputs/link_analyzer.py').read()); print('Syntax OK! Lines:', len(open('/mnt/user-data/outputs/link_analyzer.py').readlines()))"
+
+Selesai
+
+Anda kehabisan pesan gratis sampai 13.40
