@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/youtube.py << 'ENDOFFILE'
 import requests
 
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
@@ -366,8 +365,3 @@ def fetch_all_sources(api_key: str, region: str = "ID", min_score: int = 45) -> 
 ENDOFFILE
 echo "Done"
 python3 -c "import ast; ast.parse(open('/mnt/user-data/outputs/youtube.py').read()); print('Syntax OK! Lines:', len(open('/mnt/user-data/outputs/youtube.py').readlines()))"
-Keluaran
-
-Done
-Syntax OK! Lines: 364
-Selesai
