@@ -1,5 +1,3 @@
-cat > /mnt/user-data/outputs/link_analyzer.py << 'ENDOFFILE'
-import re
 import requests
 
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
