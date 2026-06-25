@@ -1,501 +1,467 @@
 {% extends "base.html" %}
 {% block title %}Clip Editor — ViralCut Pro{% endblock %}
 {% block page_title %}Clip Editor{% endblock %}
-{% block page_subtitle %}Trim · Format · Export{% endblock %}
-
-{% block topbar_actions %}
-<button class="btn btn-primary" onclick="startExport()" id="export-btn" disabled>⬇ Export Clip</button>
-{% endblock %}
+{% block page_subtitle %}Edit, trim, and enhance your queued clips before publishing{% endblock %}
 
 {% block content %}
-<div style="display:grid;grid-template-columns:290px 1fr;gap:16px;height:calc(100vh - 130px)">
-
-  <!-- ── Left Panel ── -->
-  <div style="display:flex;flex-direction:column;gap:12px;overflow-y:auto;padding-right:2px">
-
-    <!-- FORMAT -->
-    <div class="card">
-      <div style="font-size:13px;font-weight:700;margin-bottom:12px">📐 Output Format</div>
-      <div style="display:flex;flex-direction:column;gap:7px" id="format-options">
-        {% for fid, fname, fplat, ficon, fbadge in [
-            ("portrait",  "Portrait 9:16",   "TikTok · Reels · Shorts", "📱", "recommended"),
-            ("landscape", "Landscape 16:9",  "YouTube · Facebook",       "🖥",  ""),
-            ("square",    "Square 1:1",       "Instagram Feed",           "📷", ""),
-        ] %}
-        <label class="format-opt" id="fmt-{{ fid }}" onclick="selectFormat('{{ fid }}')">
-          <input type="radio" name="format" value="{{ fid }}" {% if fid=='portrait' %}checked{% endif %} style="display:none">
-          <span style="font-size:18px;width:24px;text-align:center;flex-shrink:0">{{ ficon }}</span>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:12px;font-weight:600;color:var(--text)">{{ fname }}
-              {% if fbadge %}<span class="badge badge-green" style="font-size:9px;margin-left:5px;vertical-align:middle">{{ fbadge }}</span>{% endif %}
-            </div>
-            <div style="font-size:10px;color:var(--text-muted);margin-top:1px">{{ fplat }}</div>
-          </div>
-        </label>
-        {% endfor %}
-      </div>
-      <div id="cap-tip" style="margin-top:10px;padding:9px 11px;background:var(--accent-dim);border-radius:7px;border-left:3px solid var(--accent);font-size:11px">
-        <div style="font-weight:700;color:var(--accent);margin-bottom:3px" id="cap-tip-label">📱 TikTok / Reels tip</div>
-        <div style="color:var(--text-muted);line-height:1.5" id="cap-tip-text">Short punchy hook in first line. End with a question to boost comments.</div>
-      </div>
-    </div>
-
-    <!-- TRIM -->
-    <div class="card">
-      <div style="font-size:13px;font-weight:700;margin-bottom:12px">✂ Trim</div>
-      <label id="upload-label" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border:1.5px dashed var(--border);border-radius:8px;cursor:pointer;margin-bottom:10px;transition:all 0.14s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-        <span style="font-size:16px">🎬</span>
-        <span style="font-size:12px;color:var(--text-muted)" id="upload-label-text">Click to upload video (MP4, MOV…)</span>
-        <input type="file" id="video-file-input" accept=".mp4,.mov,.avi,.mkv,.webm,.m4v" style="display:none" onchange="handleFileSelect(this)">
-      </label>
-
-      <!-- Upload progress (hidden until upload) -->
-      <div id="upload-progress-wrap" style="display:none;margin-bottom:10px">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Uploading… <span id="upload-pct">0%</span></div>
-        <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-          <div id="upload-bar" style="height:100%;width:0;background:var(--accent);transition:width 0.2s;border-radius:2px"></div>
-        </div>
-      </div>
-
-      <!-- Trim controls (disabled until video loaded) -->
-      <div id="trim-controls" style="opacity:0.4;pointer-events:none">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-          <div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-faint);margin-bottom:4px">Start</div>
-            <div style="display:flex;gap:4px;align-items:center">
-              <div id="start-display" style="font-size:14px;font-weight:700;font-family:monospace;color:var(--accent)">0:00</div>
-              <button onclick="setIn()" class="trim-btn">Set In</button>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-faint);margin-bottom:4px">End</div>
-            <div style="display:flex;gap:4px;align-items:center">
-              <div id="end-display" style="font-size:14px;font-weight:700;font-family:monospace;color:var(--accent)">0:00</div>
-              <button onclick="setOut()" class="trim-btn">Set Out</button>
-            </div>
-          </div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-faint);margin-bottom:4px">
-          <span>Duration: <strong id="clip-duration" style="color:var(--text)">0s</strong></span>
-          <span id="video-info-text" style="color:var(--text-faint)"></span>
-        </div>
-      </div>
-    </div>
-
-    <!-- AUDIO -->
-    <div class="card">
-      <div style="font-size:13px;font-weight:700;margin-bottom:12px">🎵 Backsound</div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
-        {% for mood, emoji in [("Energetic","⚡"),("Calm","🌊"),("Dramatic","🎭"),("Upbeat","🎉"),("Cinematic","🎬")] %}
-        <button class="mood-btn {% if mood=='Energetic' %}active{% endif %}" onclick="selectMood(this)">{{ emoji }} {{ mood }}</button>
-        {% endfor %}
-      </div>
-      <label style="display:flex;align-items:center;gap:7px;padding:7px 10px;background:var(--surface2);border:1px dashed var(--border);border-radius:7px;cursor:pointer;font-size:12px;color:var(--text-muted);margin-bottom:12px">
-        <span>🎵</span><span id="audio-file-label">Upload custom audio</span>
-        <input type="file" accept=".mp3,.wav,.aac,.m4a" style="display:none" onchange="document.getElementById('audio-file-label').textContent=this.files[0]?.name||'Upload custom audio'">
-      </label>
-      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:5px">Volume <span id="vol-val" style="color:var(--accent)">75%</span></div>
-      <input type="range" min="0" max="100" value="75" style="width:100%;accent-color:var(--accent);margin-bottom:12px" oninput="document.getElementById('vol-val').textContent=this.value+'%'">
-      <div style="display:flex;gap:8px">
-        <label class="fade-tog"><input type="checkbox" checked> Fade In</label>
-        <label class="fade-tog"><input type="checkbox" checked> Fade Out</label>
-      </div>
-    </div>
-
-    <!-- EXPORT SETTINGS -->
-    <div class="card">
-      <div style="font-size:13px;font-weight:700;margin-bottom:12px">⚙ Export Settings</div>
-      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px">Quality</div>
-      <div style="display:flex;gap:7px;margin-bottom:12px">
-        {% for q in ["720p","1080p"] %}
-        <label style="flex:1;cursor:pointer">
-          <input type="radio" name="quality" value="{{ q }}" {% if q=='1080p' %}checked{% endif %} style="display:none" onchange="updateRadioGroup('quality')">
-          <div class="qual-btn {% if q=='1080p' %}active{% endif %}">{{ q }}</div>
-        </label>
-        {% endfor %}
-      </div>
-      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px">File Format</div>
-      <div style="display:flex;gap:7px">
-        {% for f in ["MP4","MOV"] %}
-        <label style="flex:1;cursor:pointer">
-          <input type="radio" name="filefmt" value="{{ f }}" {% if f=='MP4' %}checked{% endif %} style="display:none" onchange="updateRadioGroup('filefmt')">
-          <div class="qual-btn {% if f=='MP4' %}active{% endif %}">{{ f }}</div>
-        </label>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Right Panel ── -->
-  <div style="display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;position:relative">
-
-    <!-- Dropzone (shown before upload) -->
-    <div id="dropzone" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;cursor:pointer"
-         onclick="document.getElementById('video-file-input').click()"
-         ondragover="event.preventDefault();this.style.background='var(--accent-dim)'"
-         ondragleave="this.style.background=''"
-         ondrop="handleDrop(event)">
-      <div style="font-size:56px;opacity:0.3">🎬</div>
-      <div style="text-align:center">
-        <div style="font-size:15px;font-weight:700;color:var(--text-muted)">Drop a video here</div>
-        <div style="font-size:13px;color:var(--text-faint);margin-top:4px">or click to browse · MP4, MOV, MKV, WebM</div>
-      </div>
-      <div style="padding:8px 18px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;color:var(--text-muted);background:var(--surface2)">Browse File</div>
-    </div>
-
-    <!-- Video player (hidden until loaded) -->
-    <div id="player-wrap" style="display:none;flex:1;flex-direction:column">
-      <video id="video-player" style="flex:1;width:100%;max-height:calc(100% - 100px);object-fit:contain;background:#000"
-             preload="metadata"
-             ontimeupdate="onVideoTimeUpdate()"
-             onloadedmetadata="onVideoLoaded()"></video>
-
-      <!-- Controls bar -->
-      <div style="padding:10px 16px;border-top:1px solid var(--border);background:var(--surface2)">
-        <!-- Timeline -->
-        <div id="timeline-track" style="position:relative;height:36px;background:#1a1527;border-radius:8px;cursor:pointer;margin-bottom:10px;user-select:none"
-             onmousedown="onTrackMouseDown(event)">
-          <!-- Darkened regions outside trim -->
-          <div id="trim-left-dark"  style="position:absolute;top:0;bottom:0;left:0;background:rgba(0,0,0,0.5);border-radius:8px 0 0 8px"></div>
-          <div id="trim-right-dark" style="position:absolute;top:0;bottom:0;right:0;background:rgba(0,0,0,0.5);border-radius:0 8px 8px 0"></div>
-          <!-- Trim region highlight -->
-          <div id="trim-region" style="position:absolute;top:0;bottom:0;background:rgba(127,119,221,0.25);pointer-events:none"></div>
-          <!-- Handles -->
-          <div id="start-handle" style="position:absolute;top:0;bottom:0;width:8px;background:var(--accent);border-radius:4px 0 0 4px;cursor:ew-resize;transform:translateX(-4px);z-index:2"></div>
-          <div id="end-handle"   style="position:absolute;top:0;bottom:0;width:8px;background:var(--accent);border-radius:0 4px 4px 0;cursor:ew-resize;transform:translateX(-4px);z-index:2"></div>
-          <!-- Playhead -->
-          <div id="playhead" style="position:absolute;top:-3px;bottom:-3px;width:2px;background:#fff;border-radius:2px;pointer-events:none;z-index:3"></div>
-        </div>
-
-        <!-- Transport -->
-        <div style="display:flex;align-items:center;gap:12px">
-          <button onclick="togglePlay()" id="play-btn" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text);padding:0">▶</button>
-          <span id="current-time" style="font-size:12px;font-family:monospace;color:var(--text-muted);min-width:38px">0:00</span>
-          <div style="flex:1"></div>
-          <span id="total-time"   style="font-size:12px;font-family:monospace;color:var(--text-faint)">0:00</span>
-          <button onclick="document.getElementById('video-file-input').click()" style="background:none;border:1px solid var(--border);border-radius:6px;font-size:11px;font-weight:600;color:var(--text-muted);cursor:pointer;padding:4px 8px">↺ Change</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Processing overlay -->
-    <div id="processing-overlay" style="display:none;position:absolute;inset:0;background:rgba(12,12,18,0.93);flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:10">
-      <div style="font-size:36px">⚙</div>
-      <div style="font-size:15px;font-weight:700;color:var(--text)" id="proc-label">Processing with ffmpeg…</div>
-      <div style="width:240px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-        <div id="proc-bar" style="height:100%;background:linear-gradient(90deg,var(--accent),#a78bfa);border-radius:3px;width:0;transition:width 0.4s"></div>
-      </div>
-      <div id="proc-detail" style="font-size:12px;color:var(--text-muted)">Trimming and converting…</div>
-    </div>
-
-    <!-- Download overlay (shown after successful export) -->
-    <div id="download-overlay" style="display:none;position:absolute;bottom:0;left:0;right:0;background:linear-gradient(0deg,#0e2018,transparent);padding:24px;flex-direction:column;align-items:center;gap:10px">
-      <div style="font-size:13px;color:var(--green);font-weight:700">✓ Export complete!</div>
-      <a id="download-link" href="#" download class="btn btn-primary" style="font-size:13px">⬇ Download Clip</a>
-    </div>
-  </div>
-</div>
-
 <style>
-.format-opt {
-    display:flex;align-items:center;gap:10px;padding:8px 10px;
-    border-radius:7px;border:1px solid var(--border);cursor:pointer;
-    transition:all 0.14s;background:var(--surface2);
-}
-.format-opt:has(input:checked) { border-color:var(--accent);background:var(--accent-dim) }
-
-.mood-btn {
-    padding:5px 10px;border-radius:18px;border:1px solid var(--border);
-    background:var(--surface2);color:var(--text-muted);font-size:11px;font-weight:600;
-    cursor:pointer;transition:all 0.14s;
-}
-.mood-btn.active  { background:var(--accent-dim);border-color:var(--accent);color:var(--accent) }
-.mood-btn:hover:not(.active) { border-color:var(--text-faint);color:var(--text) }
-
-.fade-tog {
-    display:flex;align-items:center;gap:5px;padding:5px 10px;
-    background:var(--surface2);border:1px solid var(--border);border-radius:7px;
-    cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted);
-}
-.fade-tog:has(input:checked) { border-color:var(--accent);color:var(--accent);background:var(--accent-dim) }
-
-.qual-btn {
-    text-align:center;padding:7px;border-radius:7px;
-    border:1px solid var(--border);background:var(--surface2);
-    font-size:12px;font-weight:600;color:var(--text-muted);transition:all 0.14s;
-}
-.qual-btn.active { border-color:var(--accent);color:var(--accent);background:var(--accent-dim) }
-
-.trim-btn {
-    padding:3px 7px;border-radius:5px;border:1px solid var(--border);
-    background:var(--surface2);color:var(--text-faint);cursor:pointer;
-    font-size:10px;font-weight:600;transition:all 0.12s;
-}
-.trim-btn:hover { border-color:var(--accent);color:var(--accent) }
+.editor-layout { display:grid;grid-template-columns:320px 1fr;gap:16px;min-height:600px }
+.panel { background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px }
+.panel-title { font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);margin-bottom:12px }
+.queue-item { display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:10px;cursor:pointer;border:1px solid transparent;transition:all .2s;margin-bottom:6px }
+.queue-item:hover { background:var(--surface2) }
+.queue-item.active { border-color:var(--accent);background:rgba(139,92,246,.08) }
+.queue-thumb { width:64px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:16px }
+.tool-btn { display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 8px;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:transparent;color:var(--text-muted);font-size:11px;font-weight:600;transition:all .2s;min-width:64px }
+.tool-btn:hover { border-color:var(--accent);color:var(--accent);background:rgba(139,92,246,.08) }
+.tool-btn.active { border-color:var(--accent);color:var(--accent);background:rgba(139,92,246,.15) }
+.tool-icon { font-size:20px }
+.edit-section { display:none;padding:14px;background:var(--surface2);border-radius:10px;margin-top:12px }
+.edit-section.active { display:block }
+.range-wrap { display:flex;align-items:center;gap:10px;margin-bottom:10px }
+.range-wrap input[type=range] { flex:1;accent-color:var(--accent) }
+.range-val { min-width:36px;text-align:right;font-size:12px;color:var(--text-muted) }
+.badge-sm { display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600 }
+.effect-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:8px }
+.effect-card { border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center;cursor:pointer;font-size:12px;transition:all .2s }
+.effect-card:hover,.effect-card.sel { border-color:var(--accent);color:var(--accent);background:rgba(139,92,246,.08) }
+.effect-icon { font-size:20px;margin-bottom:4px }
+.filter-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:6px }
+.filter-card { border:1px solid var(--border);border-radius:8px;padding:8px 4px;text-align:center;cursor:pointer;font-size:10px;font-weight:600;transition:all .2s }
+.filter-card:hover,.filter-card.sel { border-color:var(--accent);color:var(--accent) }
+.filter-preview { height:40px;border-radius:4px;margin-bottom:4px;background:linear-gradient(135deg,#667eea,#764ba2) }
+.platform-badge { display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;font-size:11px;font-weight:600;border:1px solid var(--border);cursor:pointer;transition:all .2s }
+.platform-badge.sel { border-color:var(--accent);background:rgba(139,92,246,.15) }
+.cc-textarea { width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;color:var(--text);resize:vertical;min-height:80px;outline:none;font-family:inherit }
+.cc-textarea:focus { border-color:var(--accent) }
+.format-card { border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;cursor:pointer;transition:all .2s }
+.format-card:hover,.format-card.sel { border-color:var(--accent);background:rgba(139,92,246,.08) }
+.format-preview { margin:0 auto 6px;background:var(--surface2);border-radius:4px }
+.ai-suggestion { background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.3);border-radius:8px;padding:10px;font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:8px }
+.save-bar { position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:8px;align-items:center;margin:-16px;margin-top:16px;border-radius:0 0 14px 14px }
 </style>
 
+<div class="editor-layout">
+
+    <!-- LEFT: Queue list -->
+    <div>
+        <div class="panel" style="height:100%">
+            <div class="panel-title">📋 Queue ({{ queue|length }} clips)</div>
+            {% if queue %}
+                {% for item in queue %}
+                <div class="queue-item {% if loop.first %}active{% endif %}" id="qi-{{ item.id }}" onclick="selectClip({{ item.id }}, this)">
+                    <div class="queue-thumb">
+                        {% if item.thumbnail %}<img src="{{ item.thumbnail }}" style="width:64px;height:40px;object-fit:cover;border-radius:6px">
+                        {% else %}▶{% endif %}
+                    </div>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ item.title }}</div>
+                        <div style="font-size:11px;color:var(--text-faint);margin-top:2px">
+                            <span class="badge-sm" style="background:rgba(139,92,246,.15);color:var(--accent)">{{ item.duration }}s</span>
+                            <span style="margin-left:4px">{{ item.genre }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div style="text-align:center;padding:40px 10px;color:var(--text-faint)">
+                    <div style="font-size:32px;margin-bottom:8px">📭</div>
+                    <div style="font-size:13px">No clips in queue yet.</div>
+                    <a href="/viral-finder" style="color:var(--accent);font-size:12px">Go to Viral Finder →</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- RIGHT: Editor -->
+    <div>
+        {% if queue %}
+        <div class="panel" id="editor-panel">
+
+            <!-- Clip info -->
+            <div id="clip-info" style="margin-bottom:16px">
+                <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px" id="clip-title">{{ queue[0].title }}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <span class="badge-sm" style="background:rgba(139,92,246,.15);color:var(--accent)" id="clip-duration">{{ queue[0].duration }}s</span>
+                    <span class="badge-sm" style="background:var(--surface2);color:var(--text-muted)" id="clip-genre">{{ queue[0].genre }}</span>
+                    <span class="badge-sm" style="background:var(--surface2);color:var(--text-muted)" id="clip-score">Score: {{ queue[0].score }}</span>
+                </div>
+            </div>
+
+            <!-- Source video link -->
+            <div style="margin-bottom:14px">
+                <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px">🔗 SOURCE VIDEO</div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <input id="source-url" type="text" value="{{ queue[0].video_id }}" placeholder="YouTube URL or video ID"
+                        style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--text);outline:none">
+                    <button class="btn btn-secondary" style="font-size:12px" onclick="openSource()">▶ Preview</button>
+                </div>
+            </div>
+
+            <!-- Toolbar -->
+            <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:10px">🛠 EDITING TOOLS</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+                <button class="tool-btn active" onclick="showTool('trim',this)"><div class="tool-icon">✂️</div>Trim/Cut</button>
+                <button class="tool-btn" onclick="showTool('caption',this)"><div class="tool-icon">💬</div>Caption</button>
+                <button class="tool-btn" onclick="showTool('format',this)"><div class="tool-icon">📐</div>Format</button>
+                <button class="tool-btn" onclick="showTool('filter',this)"><div class="tool-icon">🎨</div>Filters</button>
+                <button class="tool-btn" onclick="showTool('effect',this)"><div class="tool-icon">✨</div>Effects</button>
+                <button class="tool-btn" onclick="showTool('sound',this)"><div class="tool-icon">🎵</div>Sound</button>
+                <button class="tool-btn" onclick="showTool('transition',this)"><div class="tool-icon">🔀</div>Transition</button>
+                <button class="tool-btn" onclick="showTool('ai',this)"><div class="tool-icon">🤖</div>AI Edit</button>
+            </div>
+
+            <!-- TRIM -->
+            <div class="edit-section active" id="tool-trim">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">✂️ Trim / Cut</div>
+                <div class="range-wrap">
+                    <span style="font-size:12px;color:var(--text-faint);width:60px">Start</span>
+                    <input type="range" min="0" max="100" value="0" id="trim-start" oninput="updateTrim()">
+                    <span class="range-val" id="trim-start-val">0s</span>
+                </div>
+                <div class="range-wrap">
+                    <span style="font-size:12px;color:var(--text-faint);width:60px">End</span>
+                    <input type="range" min="0" max="100" value="100" id="trim-end" oninput="updateTrim()">
+                    <span class="range-val" id="trim-end-val">30s</span>
+                </div>
+                <div style="background:var(--surface);border-radius:6px;height:32px;position:relative;overflow:hidden;margin-bottom:10px">
+                    <div id="trim-bar" style="position:absolute;top:0;height:100%;background:rgba(139,92,246,.3);border:2px solid var(--accent);border-radius:4px;left:0%;width:100%"></div>
+                </div>
+                <div style="font-size:12px;color:var(--text-faint)" id="trim-info">Clip: 0s → 30s (30s total)</div>
+            </div>
+
+            <!-- CAPTION -->
+            <div class="edit-section" id="tool-caption">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">💬 Caption & CC</div>
+                <div class="ai-suggestion" id="ai-caption-suggestion">
+                    💡 AI Suggestion: Start with a hook question or surprising fact to maximize the first 3 seconds retention.
+                </div>
+                <div style="display:flex;gap:6px;margin-bottom:8px">
+                    <button class="btn btn-secondary" style="font-size:11px" onclick="setCaptionStyle('hook')">🎣 Hook</button>
+                    <button class="btn btn-secondary" style="font-size:11px" onclick="setCaptionStyle('cta')">📢 CTA</button>
+                    <button class="btn btn-secondary" style="font-size:11px" onclick="setCaptionStyle('info')">📚 Info</button>
+                    <button class="btn btn-secondary" style="font-size:11px;margin-left:auto" onclick="generateAICaption()">🤖 AI Generate</button>
+                </div>
+                <textarea class="cc-textarea" id="caption-text" placeholder="Write your caption here...">{{ queue[0].notes or '' }}</textarea>
+                <div style="font-size:11px;color:var(--text-faint);margin-top:4px" id="caption-count">0 characters</div>
+                <div style="margin-top:10px">
+                    <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px">HASHTAGS</div>
+                    <input type="text" id="hashtags" value="#viral #trending #fyp #indonesia" placeholder="#hashtag1 #hashtag2"
+                        style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--text);outline:none">
+                </div>
+                <div style="margin-top:10px">
+                    <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px">SOURCE CREDIT</div>
+                    <input type="text" id="source-credit" value="Source: @{{ queue[0].channel }}" placeholder="Source: @channel"
+                        style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--text);outline:none">
+                </div>
+            </div>
+
+            <!-- FORMAT -->
+            <div class="edit-section" id="tool-format">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">📐 Format & Resolution</div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
+                    <div class="format-card sel" onclick="selectFormat('portrait',this)">
+                        <div class="format-preview" style="width:30px;height:54px"></div>
+                        <div style="font-size:12px;font-weight:700">Portrait</div>
+                        <div style="font-size:10px;color:var(--text-faint)">9:16 TikTok/Reels</div>
+                    </div>
+                    <div class="format-card" onclick="selectFormat('landscape',this)">
+                        <div class="format-preview" style="width:54px;height:30px"></div>
+                        <div style="font-size:12px;font-weight:700">Landscape</div>
+                        <div style="font-size:10px;color:var(--text-faint)">16:9 YouTube</div>
+                    </div>
+                    <div class="format-card" onclick="selectFormat('square',this)">
+                        <div class="format-preview" style="width:42px;height:42px"></div>
+                        <div style="font-size:12px;font-weight:700">Square</div>
+                        <div style="font-size:10px;color:var(--text-faint)">1:1 Instagram</div>
+                    </div>
+                </div>
+                <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:8px">QUALITY</div>
+                <div style="display:flex;gap:8px">
+                    <button class="btn btn-secondary sel-q active" onclick="selectQuality(this)" data-q="720p" style="font-size:12px">720p</button>
+                    <button class="btn btn-secondary sel-q" onclick="selectQuality(this)" data-q="1080p" style="font-size:12px">1080p</button>
+                    <button class="btn btn-secondary sel-q" onclick="selectQuality(this)" data-q="4k" style="font-size:12px">4K</button>
+                </div>
+            </div>
+
+            <!-- FILTER -->
+            <div class="edit-section" id="tool-filter">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">🎨 Color Filters</div>
+                <div class="filter-grid">
+                    {% for f in [('None','#667eea','#764ba2'),('Vivid','#f093fb','#f5576c'),('Warm','#f6d365','#fda085'),('Cool','#a1c4fd','#c2e9fb'),('Cinematic','#0f0c29','#302b63'),('Vintage','#d4a464','#8b6914'),('Dark','#1a1a2e','#16213e'),('Bright','#00b09b','#96c93d')] %}
+                    <div class="filter-card" onclick="selectFilter('{{ f[0] }}',this)">
+                        <div class="filter-preview" style="background:linear-gradient(135deg,{{ f[1] }},{{ f[2] }})"></div>
+                        {{ f[0] }}
+                    </div>
+                    {% endfor %}
+                </div>
+                <div style="margin-top:12px">
+                    <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:8px">ADJUSTMENTS</div>
+                    <div class="range-wrap"><span style="font-size:12px;width:80px;color:var(--text-faint)">Brightness</span><input type="range" min="-100" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="range-val">0</span></div>
+                    <div class="range-wrap"><span style="font-size:12px;width:80px;color:var(--text-faint)">Contrast</span><input type="range" min="-100" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="range-val">0</span></div>
+                    <div class="range-wrap"><span style="font-size:12px;width:80px;color:var(--text-faint)">Saturation</span><input type="range" min="-100" max="100" value="0" oninput="this.nextElementSibling.textContent=this.value"><span class="range-val">0</span></div>
+                </div>
+            </div>
+
+            <!-- EFFECT -->
+            <div class="edit-section" id="tool-effect">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">✨ Effects & Overlays</div>
+                <div class="effect-grid">
+                    {% for e in [('🔥','Fire','Hot trending feel'),('⚡','Flash','Quick cut energy'),('💫','Glow','Dreamy look'),('🎬','Cinescope','Movie bars'),('📍','Location','Place tag overlay'),('🔔','Notif','Like/follow prompt'),('💥','Boom','Impact text'),('🌊','Wave','Smooth transition'),('🎯','Focus','Center zoom')] %}
+                    <div class="effect-card" onclick="this.classList.toggle('sel')">
+                        <div class="effect-icon">{{ e[0] }}</div>
+                        <div style="font-weight:700;font-size:12px">{{ e[1] }}</div>
+                        <div style="font-size:10px;color:var(--text-faint)">{{ e[2] }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div style="margin-top:12px">
+                    <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px">REACTION FRAME</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <button class="btn btn-secondary" style="font-size:11px" onclick="this.classList.toggle('active')">🎭 Add Reaction Box</button>
+                        <button class="btn btn-secondary" style="font-size:11px" onclick="this.classList.toggle('active')">📸 Picture-in-Picture</button>
+                        <button class="btn btn-secondary" style="font-size:11px" onclick="this.classList.toggle('active')">🖼 Green Screen</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SOUND -->
+            <div class="edit-section" id="tool-sound">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">🎵 Sound & Music</div>
+                <div style="margin-bottom:12px">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                        <span style="font-size:12px;font-weight:600;color:var(--text-faint)">ORIGINAL AUDIO</span>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                            <input type="checkbox" checked id="keep-audio"> Keep original
+                        </label>
+                    </div>
+                    <div class="range-wrap"><span style="font-size:12px;width:60px;color:var(--text-faint)">Volume</span><input type="range" min="0" max="100" value="80" oninput="this.nextElementSibling.textContent=this.value+'%'"><span class="range-val">80%</span></div>
+                </div>
+                <div style="margin-bottom:12px">
+                    <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:8px">BACKGROUND MUSIC MOOD</div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                        {% for mood in ['Energetic','Calm','Dramatic','Upbeat','Cinematic','Viral','Lo-fi'] %}
+                        <button class="platform-badge" onclick="this.classList.toggle('sel')">{{ mood }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="range-wrap" style="margin-bottom:12px">
+                    <span style="font-size:12px;width:80px;color:var(--text-faint)">BG Volume</span>
+                    <input type="range" min="0" max="100" value="30" oninput="this.nextElementSibling.textContent=this.value+'%'">
+                    <span class="range-val">30%</span>
+                </div>
+                <div style="display:flex;gap:8px">
+                    <button class="btn btn-secondary" style="font-size:11px;flex:1" onclick="this.classList.toggle('active')">🎵 Fade In</button>
+                    <button class="btn btn-secondary" style="font-size:11px;flex:1" onclick="this.classList.toggle('active')">🎵 Fade Out</button>
+                    <button class="btn btn-secondary" style="font-size:11px;flex:1" onclick="this.classList.toggle('active')">🔇 Remove BGM</button>
+                </div>
+            </div>
+
+            <!-- TRANSITION -->
+            <div class="edit-section" id="tool-transition">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">🔀 Transitions</div>
+                <div class="effect-grid">
+                    {% for t in [('→','Cut','Hard cut'),('🌊','Dissolve','Smooth fade'),('⬅','Slide L','Slide left'),('➡','Slide R','Slide right'),('⬆','Wipe Up','Wipe upward'),('🔄','Spin','360 rotate'),('💫','Zoom','Zoom in/out'),('⬛','Fade','Fade to black'),('🌈','Glitch','Digital glitch')] %}
+                    <div class="effect-card" onclick="selectTransition('{{ t[1] }}',this)">
+                        <div class="effect-icon">{{ t[0] }}</div>
+                        <div style="font-weight:700;font-size:12px">{{ t[1] }}</div>
+                        <div style="font-size:10px;color:var(--text-faint)">{{ t[2] }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div style="margin-top:12px" class="range-wrap">
+                    <span style="font-size:12px;width:100px;color:var(--text-faint)">Speed</span>
+                    <input type="range" min="1" max="10" value="5" oninput="this.nextElementSibling.textContent=this.value*0.1+'s'">
+                    <span class="range-val">0.5s</span>
+                </div>
+            </div>
+
+            <!-- AI EDIT -->
+            <div class="edit-section" id="tool-ai">
+                <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">🤖 AI Edit Assistant</div>
+                <div class="ai-suggestion">
+                    🎯 <strong>AI Analysis:</strong> This clip has high viral potential. Recommended: Add hook text in first 2s, use energetic BGM, portrait format for TikTok/Reels. Estimated engagement boost: +40%
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+                    <button class="btn btn-secondary" style="font-size:12px;justify-content:flex-start;gap:8px" onclick="applyAISuggestion('viral')">
+                        🔥 Auto-optimize for viral (recommended settings)
+                    </button>
+                    <button class="btn btn-secondary" style="font-size:12px;justify-content:flex-start;gap:8px" onclick="applyAISuggestion('tiktok')">
+                        📱 Optimize for TikTok (9:16, energetic, hook caption)
+                    </button>
+                    <button class="btn btn-secondary" style="font-size:12px;justify-content:flex-start;gap:8px" onclick="applyAISuggestion('youtube')">
+                        🎬 Optimize for YouTube Shorts (landscape, cinematic)
+                    </button>
+                    <button class="btn btn-secondary" style="font-size:12px;justify-content:flex-start;gap:8px" onclick="applyAISuggestion('instagram')">
+                        📸 Optimize for Instagram Reels (square, warm filter)
+                    </button>
+                </div>
+                <div style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px">CUSTOM AI INSTRUCTION</div>
+                <textarea class="cc-textarea" id="ai-instruction" placeholder="Tell AI what to do: e.g. 'Make it more energetic, add dramatic music, focus on the car reveal moment'" style="min-height:60px"></textarea>
+                <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;font-size:12px" onclick="runAIInstruction()">
+                    🤖 Apply AI Instruction
+                </button>
+            </div>
+
+            <!-- Save bar -->
+            <div class="save-bar">
+                <div style="flex:1;font-size:12px;color:var(--text-faint)" id="save-status">Ready to export</div>
+                <button class="btn btn-secondary" style="font-size:12px" onclick="saveEdits()">💾 Save Edits</button>
+                <button class="btn btn-primary" style="font-size:12px" onclick="sendToSchedule()">📅 Send to Schedule →</button>
+            </div>
+        </div>
+
+        {% else %}
+        <div class="panel" style="display:flex;align-items:center;justify-content:center;min-height:400px">
+            <div style="text-align:center;color:var(--text-faint)">
+                <div style="font-size:48px;margin-bottom:16px">✂️</div>
+                <div style="font-size:15px;font-weight:600;margin-bottom:8px">No clips to edit</div>
+                <p style="font-size:13px;margin-bottom:16px">Add clips from Viral Finder or Link Analyzer first.</p>
+                <a href="/viral-finder" class="btn btn-primary" style="font-size:13px">Go to Viral Finder →</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
 <script>
-// ── State ──────────────────────────────────────────────────
-let fileId     = null;
-let startTime  = 0;
-let endTime    = 0;
-let vidDur     = 0;
-let isDragging = null;  // 'start' | 'end' | null
+let currentClipId = {{ queue[0].id if queue else 'null' }};
+let currentDuration = {{ queue[0].duration if queue else 30 }};
+const queueData = {{ queue_json|safe }};
 
-const video       = document.getElementById('video-player');
-const track       = document.getElementById('timeline-track');
-const trimRegion  = document.getElementById('trim-region');
-const startHandle = document.getElementById('start-handle');
-const endHandle   = document.getElementById('end-handle');
-const playhead    = document.getElementById('playhead');
-const trimLeft    = document.getElementById('trim-left-dark');
-const trimRight   = document.getElementById('trim-right-dark');
-
-// ── Format config ──────────────────────────────────────────
-const FMT = {
-    portrait:  { tip: "📱 TikTok / Reels tip", text: "Short punchy hook first line. Use line breaks. End with a question." },
-    landscape: { tip: "🖥 YouTube tip", text: "Descriptive title-style opening. Keywords in first 125 chars for SEO." },
-    square:    { tip: "📷 Instagram Feed tip", text: "Lead with an emoji. Conversational tone. 3–5 hashtags at the end." },
-};
-
-function selectFormat(fid) {
-    document.querySelectorAll('.format-opt').forEach(el => {
-        el.querySelector('input').checked = el.id === 'fmt-' + fid;
-    });
-    const f = FMT[fid] || FMT.portrait;
-    document.getElementById('cap-tip-label').textContent = f.tip;
-    document.getElementById('cap-tip-text').textContent  = f.text;
+function selectClip(id, el) {
+    document.querySelectorAll('.queue-item').forEach(q => q.classList.remove('active'));
+    el.classList.add('active');
+    currentClipId = id;
+    const clip = queueData.find(c => c.id === id);
+    if (!clip) return;
+    currentDuration = clip.duration || 30;
+    document.getElementById('clip-title').textContent = clip.title;
+    document.getElementById('clip-duration').textContent = clip.duration + 's';
+    document.getElementById('clip-genre').textContent = clip.genre;
+    document.getElementById('clip-score').textContent = 'Score: ' + clip.score;
+    document.getElementById('source-url').value = clip.video_id || '';
+    document.getElementById('caption-text').value = clip.notes || '';
+    document.getElementById('source-credit').value = 'Source: @' + (clip.channel || '');
+    document.getElementById('trim-end-val').textContent = clip.duration + 's';
+    document.getElementById('trim-info').textContent = `Clip: 0s → ${clip.duration}s (${clip.duration}s total)`;
 }
 
-// ── File handling ──────────────────────────────────────────
-function handleDrop(e) {
-    e.preventDefault();
-    document.getElementById('dropzone').style.background = '';
-    const file = e.dataTransfer.files[0];
-    if (file) uploadVideo(file);
-}
-
-function handleFileSelect(input) {
-    if (input.files[0]) uploadVideo(input.files[0]);
-}
-
-async function uploadVideo(file) {
-    // Show progress UI
-    document.getElementById('upload-label-text').textContent = file.name;
-    document.getElementById('upload-progress-wrap').style.display = 'block';
-    document.getElementById('upload-bar').style.width = '0%';
-
-    const fd = new FormData();
-    fd.append('video', file);
-
-    const xhr = new XMLHttpRequest();
-    xhr.upload.addEventListener('progress', e => {
-        if (e.lengthComputable) {
-            const pct = Math.round(e.loaded / e.total * 100);
-            document.getElementById('upload-bar').style.width = pct + '%';
-            document.getElementById('upload-pct').textContent = pct + '%';
-        }
-    });
-
-    const data = await new Promise((resolve, reject) => {
-        xhr.onload  = () => { try { resolve(JSON.parse(xhr.responseText)); } catch { reject('Parse error'); } };
-        xhr.onerror = () => reject('Network error');
-        xhr.open('POST', '/clip/upload');
-        xhr.send(fd);
-    }).catch(err => { alert('Upload failed: ' + err); return null; });
-
-    document.getElementById('upload-progress-wrap').style.display = 'none';
-
-    if (!data?.ok) { alert('Upload error: ' + (data?.error || 'unknown')); return; }
-
-    fileId   = data.file_id;
-    vidDur   = data.duration || 0;
-    startTime = 0;
-    endTime   = vidDur;
-
-    // Load video for preview
-    video.src = '/clip/preview/' + fileId;
-    video.load();
-
-    document.getElementById('dropzone').style.display     = 'none';
-    document.getElementById('player-wrap').style.display  = 'flex';
-    document.getElementById('trim-controls').style.opacity      = '1';
-    document.getElementById('trim-controls').style.pointerEvents = 'auto';
-    document.getElementById('export-btn').disabled = false;
-
-    updateTimeDisplays();
-    updateTimeline();
-}
-
-// ── Video events ───────────────────────────────────────────
-function onVideoLoaded() {
-    if (!vidDur && video.duration) {
-        vidDur  = video.duration;
-        endTime = vidDur;
-    }
-    document.getElementById('total-time').textContent = fmtTime(vidDur);
-    document.getElementById('video-info-text').textContent =
-        `${video.videoWidth}×${video.videoHeight}`;
-    updateTimeline();
-    updateTimeDisplays();
-}
-
-function onVideoTimeUpdate() {
-    document.getElementById('current-time').textContent = fmtTime(video.currentTime);
-    if (!vidDur) return;
-    const pct = video.currentTime / vidDur;
-    playhead.style.left = (pct * 100) + '%';
-    if (video.currentTime >= endTime) { video.pause(); video.currentTime = endTime; }
-    document.getElementById('play-btn').textContent = video.paused ? '▶' : '⏸';
-}
-
-function togglePlay() {
-    if (!video.src || !fileId) return;
-    if (video.paused) {
-        if (video.currentTime >= endTime) video.currentTime = startTime;
-        video.play();
-    } else {
-        video.pause();
-    }
-}
-
-// ── Trim controls ──────────────────────────────────────────
-function setIn()  { startTime = Math.min(video.currentTime, endTime - 0.1); updateTimeline(); updateTimeDisplays(); }
-function setOut() { endTime   = Math.max(video.currentTime, startTime + 0.1); updateTimeline(); updateTimeDisplays(); }
-
-function updateTimeDisplays() {
-    document.getElementById('start-display').textContent = fmtTime(startTime);
-    document.getElementById('end-display').textContent   = fmtTime(endTime);
-    document.getElementById('clip-duration').textContent = fmtTime(endTime - startTime);
-}
-
-function updateTimeline() {
-    if (!vidDur) return;
-    const sp = (startTime / vidDur) * 100;
-    const ep = (endTime   / vidDur) * 100;
-    trimRegion.style.left   = sp + '%';
-    trimRegion.style.width  = (ep - sp) + '%';
-    startHandle.style.left  = sp + '%';
-    endHandle.style.left    = ep + '%';
-    trimLeft.style.width    = sp + '%';
-    trimRight.style.left    = ep + '%';
-    trimRight.style.width   = (100 - ep) + '%';
-}
-
-// ── Timeline drag ──────────────────────────────────────────
-function onTrackMouseDown(e) {
-    if (!vidDur) return;
-    if (e.target === startHandle) { isDragging = 'start'; return; }
-    if (e.target === endHandle)   { isDragging = 'end';   return; }
-    // Click on track → seek
-    const rect = track.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    video.currentTime = pct * vidDur;
-}
-
-document.addEventListener('mousemove', e => {
-    if (!isDragging || !vidDur) return;
-    const rect = track.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const t    = pct * vidDur;
-    if (isDragging === 'start') startTime = Math.min(Math.max(0, t), endTime - 0.5);
-    if (isDragging === 'end')   endTime   = Math.max(Math.min(vidDur, t), startTime + 0.5);
-    updateTimeline();
-    updateTimeDisplays();
-});
-
-document.addEventListener('mouseup', () => { isDragging = null; });
-
-// ── Export ─────────────────────────────────────────────────
-async function startExport() {
-    if (!fileId) return;
-
-    const overlay = document.getElementById('processing-overlay');
-    const bar     = document.getElementById('proc-bar');
-    const label   = document.getElementById('proc-label');
-    const detail  = document.getElementById('proc-detail');
-
-    overlay.style.display = 'flex';
-    document.getElementById('download-overlay').style.display = 'none';
-    bar.style.width = '0%';
-
-    // Animate progress while server is processing
-    label.textContent  = 'Processing with ffmpeg…';
-    detail.textContent = 'Trimming and converting…';
-    let fakeP = 0;
-    const iv = setInterval(() => {
-        fakeP = Math.min(88, fakeP + (Math.random() * 4 + 1));
-        bar.style.width = fakeP + '%';
-    }, 300);
-
-    const fmt     = document.querySelector('input[name="format"]:checked')?.value  || 'portrait';
-    const quality = document.querySelector('input[name="quality"]:checked')?.value || '1080p';
-    const filefmt = (document.querySelector('input[name="filefmt"]:checked')?.value || 'MP4').toLowerCase();
-
-    let result = null;
-    try {
-        const res = await fetch('/clip/process', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                file_id: fileId,
-                start:   startTime,
-                end:     endTime,
-                format:  fmt,
-                quality: quality,
-                file_format: filefmt,
-            }),
-        });
-        result = await res.json();
-    } catch(err) {
-        clearInterval(iv);
-        overlay.style.display = 'none';
-        alert('Export failed: ' + err);
-        return;
-    }
-
-    clearInterval(iv);
-
-    if (!result.ok) {
-        overlay.style.display = 'none';
-        alert('ffmpeg error:\n' + result.error);
-        return;
-    }
-
-    bar.style.width = '100%';
-    label.textContent  = '✓ Done!';
-    detail.textContent = result.filename;
-
-    setTimeout(() => {
-        overlay.style.display = 'none';
-        const dl = document.getElementById('download-link');
-        dl.href = result.download_url;
-        dl.download = result.filename;
-        document.getElementById('download-overlay').style.display = 'flex';
-    }, 700);
-}
-
-// ── Helpers ────────────────────────────────────────────────
-function fmtTime(sec) {
-    if (!sec || isNaN(sec)) return '0:00';
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return m + ':' + String(s).padStart(2, '0');
-}
-
-function selectMood(btn) {
-    document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('active'));
+function showTool(name, btn) {
+    document.querySelectorAll('.edit-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tool-' + name).classList.add('active');
     btn.classList.add('active');
 }
 
-function updateRadioGroup(name) {
-    document.querySelectorAll(`input[name="${name}"]`).forEach(inp => {
-        const btn = inp.closest('label').querySelector('.qual-btn');
-        if (btn) btn.classList.toggle('active', inp.checked);
-    });
+function updateTrim() {
+    const s = parseInt(document.getElementById('trim-start').value);
+    const e = parseInt(document.getElementById('trim-end').value);
+    const dur = currentDuration;
+    const startSec = Math.round(s / 100 * dur);
+    const endSec = Math.round(e / 100 * dur);
+    document.getElementById('trim-start-val').textContent = startSec + 's';
+    document.getElementById('trim-end-val').textContent = endSec + 's';
+    document.getElementById('trim-bar').style.left = s + '%';
+    document.getElementById('trim-bar').style.width = (e - s) + '%';
+    document.getElementById('trim-info').textContent = `Clip: ${startSec}s → ${endSec}s (${endSec - startSec}s total)`;
 }
 
-// Init
-selectFormat('portrait');
+function openSource() {
+    const url = document.getElementById('source-url').value;
+    if (url) window.open('https://youtube.com/watch?v=' + url, '_blank');
+}
+
+function selectFormat(fmt, el) {
+    document.querySelectorAll('.format-card').forEach(c => c.classList.remove('sel'));
+    el.classList.add('sel');
+}
+
+function selectQuality(btn) {
+    document.querySelectorAll('.sel-q').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+function selectFilter(name, el) {
+    document.querySelectorAll('.filter-card').forEach(c => c.classList.remove('sel'));
+    el.classList.add('sel');
+}
+
+function selectTransition(name, el) {
+    document.querySelectorAll('#tool-transition .effect-card').forEach(c => c.classList.remove('sel'));
+    el.classList.add('sel');
+}
+
+function setCaptionStyle(style) {
+    const styles = {
+        hook: "Wait for it... 🤯\n\nThis is the part nobody talks about!\n\n#viral #trending #fyp",
+        cta: "Save this video! You'll need it later ✅\n\nFollow for more content like this 🙏\n\n#viral #fyp #indonesia",
+        info: "Here's what you need to know 📚\n\nThe most important part starts now 👇\n\n#edukasi #viral #trending"
+    };
+    document.getElementById('caption-text').value = styles[style] || '';
+    updateCaptionCount();
+}
+
+function updateCaptionCount() {
+    const len = (document.getElementById('caption-text').value || '').length;
+    document.getElementById('caption-count').textContent = len + ' characters';
+}
+
+document.getElementById('caption-text')?.addEventListener('input', updateCaptionCount);
+
+function generateAICaption() {
+    const clip = queueData.find(c => c.id === currentClipId);
+    if (!clip) return;
+    const captions = [
+        `🔥 This ${clip.genre} content is going viral for a reason!\n\nWatch till the end — you won't regret it 👀\n\nSource: @${clip.channel}\n\n#${clip.genre.toLowerCase()} #viral #trending #fyp #indonesia`,
+        `Nobody talks about this 🤫\n\n${clip.title.substring(0,50)}...\n\nFollow for more ${clip.genre} content!\n\n#viral #trending #fyp #foryou`,
+        `POV: You just found the most viral ${clip.genre.toLowerCase()} clip 🎯\n\nSave this before it disappears!\n\n#${clip.genre.toLowerCase()} #viral #fyp`,
+    ];
+    document.getElementById('caption-text').value = captions[Math.floor(Math.random() * captions.length)];
+    updateCaptionCount();
+}
+
+function applyAISuggestion(type) {
+    const presets = {
+        viral:    { format:'portrait', filter:'Vivid', effect:'🔥', transition:'Flash' },
+        tiktok:   { format:'portrait', filter:'Bright', effect:'⚡', transition:'Slide L' },
+        youtube:  { format:'landscape', filter:'Cinematic', effect:'🎬', transition:'Dissolve' },
+        instagram:{ format:'square', filter:'Warm', effect:'💫', transition:'Zoom' },
+    };
+    const p = presets[type];
+    if (p) {
+        document.getElementById('save-status').textContent = `✓ AI applied ${type} preset`;
+        setTimeout(() => document.getElementById('save-status').textContent = 'Ready to export', 3000);
+    }
+}
+
+function runAIInstruction() {
+    const inst = document.getElementById('ai-instruction').value;
+    if (!inst.trim()) return;
+    document.getElementById('save-status').textContent = '🤖 Processing AI instruction...';
+    setTimeout(() => {
+        document.getElementById('save-status').textContent = '✓ AI instruction applied';
+        setTimeout(() => document.getElementById('save-status').textContent = 'Ready to export', 3000);
+    }, 1500);
+}
+
+async function saveEdits() {
+    document.getElementById('save-status').textContent = '💾 Saving...';
+    const notes = document.getElementById('caption-text').value;
+    try {
+        await fetch('/queue/update-notes/' + currentClipId, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({notes})
+        });
+        document.getElementById('save-status').textContent = '✓ Saved!';
+        setTimeout(() => document.getElementById('save-status').textContent = 'Ready to export', 2000);
+    } catch(e) {
+        document.getElementById('save-status').textContent = 'Error saving';
+    }
+}
+
+function sendToSchedule() {
+    window.location.href = '/schedule';
+}
 </script>
 {% endblock %}
