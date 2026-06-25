@@ -228,7 +228,12 @@ def queue_add():
 
 @app.route("/clip-editor")
 def clip_editor():
-    return render_template("clip_editor.html", active="clip-editor")
+    conn = get_db()
+    queue = conn.execute("SELECT * FROM queue WHERE status='pending' ORDER BY sort_order ASC, added_at ASC").fetchall()
+    conn.close()
+    import json
+    queue_json = json.dumps([dict(q) for q in queue])
+    return render_template("clip_editor.html", active="clip-editor", queue=queue, queue_json=queue_json)
 
 
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
@@ -302,6 +307,11 @@ OAUTH_PLATFORMS = {
         "label": "YouTube",
         "cred_fields": [("client_id", "Client ID"), ("client_secret", "Client Secret")],
         "auth_url": "https://accounts.google.com/o/oauth2/auth?client_id={client_id}&redirect_uri={redirect_uri}&scope=https://www.googleapis.com/auth/youtube.upload&response_type=code&access_type=offline",
+    },
+    "facebook": {
+    "label": "Facebook",
+    "cred_fields": [("app_id", "App ID"), ("app_secret", "App Secret")],
+    "auth_url": "https://www.facebook.com/v18.0/dialog/oauth?client_id={app_id}&redirect_uri={redirect_uri}&scope=pages_manage_posts,pages_read_engagement,publish_video&response_type=code",
     },
 }
 
@@ -468,8 +478,11 @@ def accounts():
         has_token = bool(s.get(f"oauth_{pid}_access_token", ""))
         oauth_status[pid] = {"has_creds": has_creds, "has_token": has_token}
     conn.close()
-    return render_template("accounts.html", active="accounts", accounts=rows, oauth_status=oauth_status)
-
+    redirect_base = "https://" + os.environ.get("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
+    return render_template("accounts.html", active="accounts", accounts=rows,
+                       oauth_status=oauth_status, oauth_platforms=OAUTH_PLATFORMS,
+                       redirect_base=redirect_base)
+    
 
 @app.route("/accounts/add", methods=["POST"])
 def accounts_add():
