@@ -203,21 +203,28 @@
                     </div>
                 </div>
 
-                <!-- Account selector -->
+                <!-- Account selector - multi select -->
                 <div class="form-group">
-                    <label class="form-label">Upload to Account(s)</label>
+                    <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
+                        Upload to Account(s)
+                        <span style="font-size:11px;color:var(--text-faint)" id="acc-count-label">0 selected</span>
+                    </label>
                     {% if connected_accounts %}
                     <div style="display:flex;flex-direction:column;gap:6px" id="account-selector">
-                        <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s" class="acc-opt-row">
-                            <input type="radio" name="platform" value="All" checked onchange="updatePlatBtns()" style="accent-color:var(--accent)">
+                        <!-- Select All toggle -->
+                        <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--accent);border-radius:8px;cursor:pointer;background:rgba(127,119,221,0.08)" class="acc-opt-row" id="acc-all-row">
+                            <input type="checkbox" id="acc-all-check" onchange="toggleAllAccounts(this)" style="accent-color:var(--accent);width:16px;height:16px" checked>
                             <span style="font-size:16px">🌐</span>
                             <span style="font-size:13px;font-weight:600;color:var(--text)">All Connected Accounts</span>
                             <span style="font-size:11px;color:var(--text-faint);margin-left:auto">{{ connected_accounts|length }} account(s)</span>
                         </label>
+                        <!-- Individual accounts -->
                         {% set platform_icons_map = {"TikTok":"📱","Instagram":"📸","YouTube":"🎬","Facebook":"👥"} %}
                         {% for acc in connected_accounts %}
-                        <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s" class="acc-opt-row">
-                            <input type="radio" name="platform" value="{{ acc.platform }}:{{ acc.username }}" onchange="updatePlatBtns()" style="accent-color:var(--accent)">
+                        <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s" class="acc-opt-row acc-individual">
+                            <input type="checkbox" name="accounts[]" value="{{ acc.platform }}:{{ acc.username }}"
+                                class="acc-checkbox" onchange="updateAccSelection()"
+                                style="accent-color:var(--accent);width:16px;height:16px" checked>
                             <span style="font-size:16px">{{ platform_icons_map.get(acc.platform, "🌐") }}</span>
                             <div style="flex:1;min-width:0">
                                 <div style="font-size:13px;font-weight:600;color:var(--text)">@{{ acc.username }}</div>
@@ -229,7 +236,8 @@
                         </label>
                         {% endfor %}
                     </div>
-                    <input type="hidden" name="clip_title" id="modal-clip-title-hidden">
+                    <!-- Hidden field that stores final value for form submission -->
+                    <input type="hidden" name="platform" id="platform-hidden" value="All">
                     {% else %}
                     <div style="font-size:12px;color:var(--text-faint);padding:12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);line-height:1.6">
                         No accounts connected yet.<br>
@@ -420,9 +428,10 @@ function openAddModal(dateStr, timeStr) {
     document.getElementById('modal-caption').value    = '';
     document.getElementById('modal-char-count').textContent = '0 chars';
     document.getElementById('fetch-cap-btn').style.display = 'none';
-    // Reset account selector to All
-    const allRadio = document.querySelector('input[name="platform"][value="All"]');
-    if (allRadio) { allRadio.checked = true; updatePlatBtns(); }
+    // Reset account selector - check all accounts
+    const allCheck = document.getElementById('acc-all-check');
+    if (allCheck) { allCheck.checked = true; toggleAllAccounts(allCheck); }
+    else updateAccSelection();
     _currentVideoId = '';
     document.getElementById('sched-modal').style.display = 'flex';
 }
@@ -437,10 +446,18 @@ function openEditModal(postId, dateStr, timeStr, platform, videoId, clipTitle, c
     updateCharCount(caption || '');
     _currentVideoId = videoId;
     document.getElementById('fetch-cap-btn').style.display = videoId ? 'inline-flex' : 'none';
-    // Try to match exact account or fall back to All
-    const platInput = document.querySelector(`input[name="platform"][value="${platform}"]`) ||
-                      document.querySelector('input[name="platform"][value="All"]');
-    if (platInput) { platInput.checked = true; updatePlatBtns(); }
+    // Restore account selection from saved platform value
+    const allCheck2 = document.getElementById('acc-all-check');
+    const boxes2 = document.querySelectorAll('.acc-checkbox');
+    if (platform === 'All' || !platform) {
+        if (allCheck2) { allCheck2.checked = true; toggleAllAccounts(allCheck2); }
+    } else {
+        // Uncheck all first, then check matching
+        boxes2.forEach(cb => { cb.checked = false; });
+        const vals = platform.split(',');
+        boxes2.forEach(cb => { if (vals.includes(cb.value)) cb.checked = true; });
+        updateAccSelection();
+    }
     const clipSel = document.getElementById('modal-clip');
     if (clipSel) clipSel.value = videoId || '';
     document.getElementById('sched-modal').style.display = 'flex';
@@ -457,21 +474,55 @@ function confirmClear() {
 }
 document.getElementById('clear-modal').addEventListener('click', e => { if (e.target === document.getElementById('clear-modal')) document.getElementById('clear-modal').style.display='none'; });
 
-// ── Account selector styling ──────────────────────────────────
-function updatePlatBtns() {
-    document.querySelectorAll('.acc-opt-row').forEach(row => {
-        const inp = row.querySelector('input');
-        if (inp && inp.checked) {
-            row.style.borderColor = 'var(--accent)';
-            row.style.background = 'rgba(127,119,221,0.08)';
-        } else {
-            row.style.borderColor = 'var(--border)';
-            row.style.background = 'transparent';
-        }
-    });
+// ── Multi-account selector ────────────────────────────────────
+function toggleAllAccounts(allCheck) {
+    const boxes = document.querySelectorAll('.acc-checkbox');
+    boxes.forEach(cb => { cb.checked = allCheck.checked; });
+    updateAccSelection();
 }
+
+function updateAccSelection() {
+    const boxes = Array.from(document.querySelectorAll('.acc-checkbox'));
+    const checked = boxes.filter(cb => cb.checked);
+    const allCheck = document.getElementById('acc-all-check');
+    const allRow = document.getElementById('acc-all-row');
+    const countLabel = document.getElementById('acc-count-label');
+
+    // Update "All" checkbox state
+    if (allCheck) {
+        allCheck.checked = checked.length === boxes.length;
+        allCheck.indeterminate = checked.length > 0 && checked.length < boxes.length;
+    }
+
+    // Style rows
+    document.querySelectorAll('.acc-individual').forEach(row => {
+        const cb = row.querySelector('input');
+        row.style.borderColor = cb.checked ? 'var(--accent)' : 'var(--border)';
+        row.style.background = cb.checked ? 'rgba(127,119,221,0.08)' : 'transparent';
+    });
+
+    // Update count label
+    if (countLabel) countLabel.textContent = checked.length + ' selected';
+
+    // Update hidden platform field
+    const hidden = document.getElementById('platform-hidden');
+    if (hidden) {
+        if (checked.length === 0) {
+            hidden.value = 'All';
+        } else if (checked.length === boxes.length) {
+            hidden.value = 'All';
+        } else {
+            hidden.value = checked.map(cb => cb.value).join(',');
+        }
+    }
+}
+
+function updatePlatBtns() { updateAccSelection(); }
+
 // Run on page load
-document.addEventListener('DOMContentLoaded', updatePlatBtns);
+document.addEventListener('DOMContentLoaded', function() {
+    updateAccSelection();
+});
 
 // ── Clip selector ────────────────────────────────────────────
 function onClipSelect(sel) {
