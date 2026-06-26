@@ -600,6 +600,9 @@ def schedule():
     prev_week = (week_start - timedelta(weeks=1)).isoformat()
     next_week = (week_start + timedelta(weeks=1)).isoformat()
 
+    conn2 = get_db()
+    connected_accounts = conn2.execute("SELECT * FROM accounts WHERE enabled=1 ORDER BY platform, username").fetchall()
+    conn2.close()
     return render_template("schedule.html", active="schedule",
                            calendar_data=calendar_data,
                            all_posts=all_posts,
@@ -609,7 +612,8 @@ def schedule():
                            next_week=next_week,
                            summary=summary,
                            queue_items=queue_items,
-                           platform_icons=PLATFORM_ICONS)
+                           platform_icons=PLATFORM_ICONS
+                           connected_accounts=connected_accounts)
 
 
 @app.route("/schedule/add", methods=["POST"])
