@@ -203,19 +203,40 @@
                     </div>
                 </div>
 
-                <!-- Platform -->
+                <!-- Account selector -->
                 <div class="form-group">
-                    <label class="form-label">Platform</label>
-                    <div style="display:flex;gap:7px;flex-wrap:wrap">
-                        {% for pname, picon in [("TikTok","📱"),("Instagram","📸"),("YouTube","🖥"),("All","🌐")] %}
-                        <label style="cursor:pointer">
-                            <input type="radio" name="platform" value="{{ pname }}" style="display:none"
-                                   {% if pname == 'All' %}checked{% endif %}
-                                   onchange="updatePlatBtns()">
-                            <div class="plat-opt {% if pname == 'All' %}active{% endif %}" data-p="{{ pname }}">{{ picon }} {{ pname }}</div>
+                    <label class="form-label">Upload to Account(s)</label>
+                    {% if connected_accounts %}
+                    <div style="display:flex;flex-direction:column;gap:6px" id="account-selector">
+                        <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s" class="acc-opt-row">
+                            <input type="radio" name="platform" value="All" checked onchange="updatePlatBtns()" style="accent-color:var(--accent)">
+                            <span style="font-size:16px">🌐</span>
+                            <span style="font-size:13px;font-weight:600;color:var(--text)">All Connected Accounts</span>
+                            <span style="font-size:11px;color:var(--text-faint);margin-left:auto">{{ connected_accounts|length }} account(s)</span>
+                        </label>
+                        {% set platform_icons_map = {"TikTok":"📱","Instagram":"📸","YouTube":"🎬","Facebook":"👥"} %}
+                        {% for acc in connected_accounts %}
+                        <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s" class="acc-opt-row">
+                            <input type="radio" name="platform" value="{{ acc.platform }}:{{ acc.username }}" onchange="updatePlatBtns()" style="accent-color:var(--accent)">
+                            <span style="font-size:16px">{{ platform_icons_map.get(acc.platform, "🌐") }}</span>
+                            <div style="flex:1;min-width:0">
+                                <div style="font-size:13px;font-weight:600;color:var(--text)">@{{ acc.username }}</div>
+                                <div style="font-size:11px;color:var(--text-faint)">{{ acc.platform }}</div>
+                            </div>
+                            {% if not acc.enabled %}
+                            <span style="font-size:10px;color:#f87171;font-weight:600">Disabled</span>
+                            {% endif %}
                         </label>
                         {% endfor %}
                     </div>
+                    <input type="hidden" name="clip_title" id="modal-clip-title-hidden">
+                    {% else %}
+                    <div style="font-size:12px;color:var(--text-faint);padding:12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);line-height:1.6">
+                        No accounts connected yet.<br>
+                        <a href="/accounts" style="color:var(--accent)">Go to Accounts →</a> to add TikTok, Instagram, YouTube or Facebook.
+                    </div>
+                    <input type="hidden" name="platform" value="All">
+                    {% endif %}
                 </div>
 
                 <!-- Clip selector -->
@@ -355,7 +376,11 @@
 }
 .day-extra-add:hover { background:var(--surface2);color:var(--text-muted) }
 
-/* Platform picker in modal */
+/* Account selector rows */
+.acc-opt-row { transition:all 0.14s }
+.acc-opt-row:hover { border-color:var(--accent) !important }
+
+/* Platform picker in modal (keep for backward compat) */
 .plat-opt {
     padding:6px 11px;border-radius:8px;border:1px solid var(--border);
     background:var(--surface2);color:var(--text-muted);font-size:12px;font-weight:600;
@@ -395,8 +420,9 @@ function openAddModal(dateStr, timeStr) {
     document.getElementById('modal-caption').value    = '';
     document.getElementById('modal-char-count').textContent = '0 chars';
     document.getElementById('fetch-cap-btn').style.display = 'none';
-    document.querySelector('input[name="platform"][value="All"]').checked = true;
-    updatePlatBtns();
+    // Reset account selector to All
+    const allRadio = document.querySelector('input[name="platform"][value="All"]');
+    if (allRadio) { allRadio.checked = true; updatePlatBtns(); }
     _currentVideoId = '';
     document.getElementById('sched-modal').style.display = 'flex';
 }
@@ -411,9 +437,10 @@ function openEditModal(postId, dateStr, timeStr, platform, videoId, clipTitle, c
     updateCharCount(caption || '');
     _currentVideoId = videoId;
     document.getElementById('fetch-cap-btn').style.display = videoId ? 'inline-flex' : 'none';
-    const platInput = document.querySelector(`input[name="platform"][value="${platform}"]`);
-    if (platInput) platInput.checked = true;
-    updatePlatBtns();
+    // Try to match exact account or fall back to All
+    const platInput = document.querySelector(`input[name="platform"][value="${platform}"]`) ||
+                      document.querySelector('input[name="platform"][value="All"]');
+    if (platInput) { platInput.checked = true; updatePlatBtns(); }
     const clipSel = document.getElementById('modal-clip');
     if (clipSel) clipSel.value = videoId || '';
     document.getElementById('sched-modal').style.display = 'flex';
@@ -430,13 +457,21 @@ function confirmClear() {
 }
 document.getElementById('clear-modal').addEventListener('click', e => { if (e.target === document.getElementById('clear-modal')) document.getElementById('clear-modal').style.display='none'; });
 
-// ── Platform buttons ─────────────────────────────────────────
+// ── Account selector styling ──────────────────────────────────
 function updatePlatBtns() {
-    document.querySelectorAll('.plat-opt').forEach(opt => {
-        const inp = opt.closest('label').querySelector('input');
-        opt.classList.toggle('active', inp.checked);
+    document.querySelectorAll('.acc-opt-row').forEach(row => {
+        const inp = row.querySelector('input');
+        if (inp && inp.checked) {
+            row.style.borderColor = 'var(--accent)';
+            row.style.background = 'rgba(127,119,221,0.08)';
+        } else {
+            row.style.borderColor = 'var(--border)';
+            row.style.background = 'transparent';
+        }
     });
 }
+// Run on page load
+document.addEventListener('DOMContentLoaded', updatePlatBtns);
 
 // ── Clip selector ────────────────────────────────────────────
 function onClipSelect(sel) {
