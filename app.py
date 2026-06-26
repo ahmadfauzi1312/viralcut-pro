@@ -612,7 +612,7 @@ def schedule():
                            next_week=next_week,
                            summary=summary,
                            queue_items=queue_items,
-                           platform_icons=PLATFORM_ICONS
+                           platform_icons=PLATFORM_ICONS,
                            connected_accounts=connected_accounts)
 
 
