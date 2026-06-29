@@ -9,6 +9,8 @@ from youtube import fetch_trending, fetch_all_sources
 from youtube_upload import get_valid_access_token, upload_video_to_youtube, get_channel_info
 from analyzer import analyze_links
 from captions import generate as gen_captions
+from video_processor import process_full_pipeline, CLIPS_DIR, check_ffmpeg, check_ytdlp
+from scheduler import start_scheduler
 from clip_processor import (
     process_clip as ffmpeg_process,
     get_video_info,
@@ -20,6 +22,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "viralcut-dev-secret")
 
 init_db()
+# Start background scheduler for auto uploads
+start_scheduler(app)
 
 MOCK_VIDEOS = [
     {"video_id": "mock1",  "title": "I Bought a $500 Car and Fixed It in a Weekend",    "channel": "GarageKings",   "thumbnail": "", "views": "4.2M", "views_raw": 4200000,  "likes": "180K", "published": "2025-06-10", "genre": "Automotive", "score": 94, "duration": 30},
@@ -905,6 +909,46 @@ def upload_channel_info():
         return jsonify({"ok": True, **info})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/process/clip", methods=["POST"])
+def process_clip_route():
+    data = request.get_json(silent=True) or {}
+    video_id = data.get("video_id","").strip()
+    start_sec = float(data.get("start_sec", 0))
+    end_sec = float(data.get("end_sec", 60))
+    output_format = data.get("format","portrait")
+    quality = data.get("quality","720p")
+    caption = data.get("caption","")
+    remove_bgm = data.get("remove_bgm", False)
+    if not video_id:
+        return jsonify({"ok":False,"error":"video_id required"}), 400
+    try:
+        result = process_full_pipeline(video_id, start_sec, end_sec, output_format, quality, caption, remove_bgm)
+        conn = get_db()
+        conn.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)",
+                    (f"clip_file_{video_id}", result["clip_filename"]))
+        conn.commit()
+        conn.close()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)}), 500
+
+@app.route("/clips/download/<filename>")
+def download_clip(filename):
+    import send_file as sf
+    safe = os.path.basename(filename)
+    path = os.path.join(CLIPS_DIR, safe)
+    if not os.path.exists(path):
+        return "Not found", 404
+    return send_file(path, as_attachment=True, download_name=safe)
+
+@app.route("/system/check")
+def system_check():
+    return jsonify({
+        "ffmpeg": check_ffmpeg(),
+        "ytdlp": check_ytdlp(),
+        "scheduler": "running"
+    })
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
