@@ -6,6 +6,7 @@ from datetime import date, timedelta, datetime
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, send_file
 from db import init_db, get_db
 from youtube import fetch_trending, fetch_all_sources
+from youtube_upload import get_valid_access_token, upload_video_to_youtube, get_channel_info
 from analyzer import analyze_links
 from captions import generate as gen_captions
 from clip_processor import (
@@ -385,12 +386,18 @@ def auto_upload():
     conn = get_db()
     queue = conn.execute("SELECT * FROM queue ORDER BY sort_order ASC, added_at ASC").fetchall()
     slots = conn.execute("SELECT * FROM schedule ORDER BY id").fetchall()
+    connected_accounts = conn.execute("SELECT * FROM accounts WHERE enabled=1").fetchall()
     pending_count = sum(1 for r in queue if r["status"] == "pending")
     posted_count = sum(1 for r in queue if r["status"] == "posted")
     conn.close()
+    settings = get_settings()
+    yt_connected = bool(settings.get("oauth_youtube_access_token", ""))
     return render_template("auto_upload.html", active="auto-upload",
                            queue=queue, slots=slots,
-                           pending_count=pending_count, posted_count=posted_count)
+                           connected_accounts=connected_accounts,
+                           pending_count=pending_count,
+                           posted_count=posted_count,
+                           yt_connected=yt_connected)
 
 
 @app.route("/queue/remove/<int:item_id>", methods=["POST"])
@@ -845,6 +852,59 @@ def privacy():
     if os.path.exists(path):
         return open(path).read()
     return "<h1>Privacy Policy</h1><p>ViralCut Pro does not sell your data. Contact: viralcutpro@gmail.com</p>", 200
+
+@app.route("/upload/youtube", methods=["POST"])
+def upload_youtube():
+    api_key = get_api_key()
+    settings = get_settings()
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
+    redirect_uri = f"https://{domain}/oauth/callback/youtube"
+    try:
+        token_result = get_valid_access_token(settings, redirect_uri)
+        if isinstance(token_result, tuple):
+            access_token, token_data = token_result
+            conn = get_db()
+            import json
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                        ("oauth_youtube_token_data", json.dumps(token_data)))
+            conn.commit()
+            conn.close()
+        else:
+            access_token = token_result
+        f = request.files.get("video")
+        if not f:
+            return jsonify({"ok": False, "error": "No video file"}), 400
+        import tempfile, uuid
+        ext = os.path.splitext(f.filename)[1] or ".mp4"
+        tmp_path = os.path.join("/tmp", f"{uuid.uuid4().hex}{ext}")
+        f.save(tmp_path)
+        title = request.form.get("title", "ViralCut Pro Upload")
+        description = request.form.get("description", "")
+        privacy = request.form.get("privacy", "public")
+        queue_id = request.form.get("queue_id", "")
+        result = upload_video_to_youtube(access_token, tmp_path, title, description, privacy=privacy)
+        os.remove(tmp_path)
+        if queue_id:
+            conn = get_db()
+            conn.execute("UPDATE queue SET status='posted' WHERE id=?", (queue_id,))
+            conn.commit()
+            conn.close()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/upload/channel-info")
+def upload_channel_info():
+    settings = get_settings()
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
+    redirect_uri = f"https://{domain}/oauth/callback/youtube"
+    try:
+        token = get_valid_access_token(settings, redirect_uri)
+        if isinstance(token, tuple): token = token[0]
+        info = get_channel_info(token)
+        return jsonify({"ok": True, **info})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
