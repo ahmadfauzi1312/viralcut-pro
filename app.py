@@ -821,11 +821,21 @@ def analyzer_analyze():
 
 @app.route("/terms")
 def terms():
-    return open("terms_of_service.html").read()
+    import os
+    base = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base, "terms_of_service.html")
+    if os.path.exists(path):
+        return open(path).read()
+    return "<h1>Terms of Service</h1><p>ViralCut Pro terms of service. Contact: viralcutpro@gmail.com</p>", 200
 
 @app.route("/privacy")
 def privacy():
-    return open("privacy_policy.html").read()
+    import os
+    base = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base, "privacy_policy.html")
+    if os.path.exists(path):
+        return open(path).read()
+    return "<h1>Privacy Policy</h1><p>ViralCut Pro does not sell your data. Contact: viralcutpro@gmail.com</p>", 200
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
