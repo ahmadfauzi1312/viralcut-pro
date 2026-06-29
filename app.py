@@ -818,6 +818,14 @@ def analyzer_analyze():
         return jsonify({"ok": True, "results": results})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/terms")
+def terms():
+    return open("terms_of_service.html").read()
+
+@app.route("/privacy")
+def privacy():
+    return open("privacy_policy.html").read()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
