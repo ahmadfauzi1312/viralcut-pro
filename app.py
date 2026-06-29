@@ -22,7 +22,6 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "viralcut-dev-secret")
 
 init_db()
-# Start background scheduler for auto uploads
 start_scheduler(app)
 
 MOCK_VIDEOS = [
