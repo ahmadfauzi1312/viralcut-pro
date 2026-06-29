@@ -828,6 +828,15 @@ def terms():
         return open(path).read()
     return "<h1>Terms of Service</h1><p>ViralCut Pro terms of service. Contact: viralcutpro@gmail.com</p>", 200
 
+@app.route("/tiktokrBMGfpNh4W6PXRMQAVrp9t5ZTQM7Ee5Y.txt")
+def tiktok_verify():
+    import os
+    base = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base, "tiktokrBMGfpNh4W6PXRMQAVrp9t5ZTQM7Ee5Y.txt")
+    if os.path.exists(path):
+        return open(path).read(), 200, {"Content-Type": "text/plain"}
+    return "tiktokrBMGfpNh4W6PXRMQAVrp9t5ZTQM7Ee5Y", 200, {"Content-Type": "text/plain"}
+
 @app.route("/privacy")
 def privacy():
     import os
