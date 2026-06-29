@@ -1,312 +1,340 @@
 {% extends "base.html" %}
-{% block title %}Queue — ViralCut Pro{% endblock %}
-{% block page_title %}Upload Queue{% endblock %}
-{% block page_subtitle %}Drag to reorder · assign slots · mark as posted{% endblock %}
+{% block title %}Auto Upload — ViralCut Pro{% endblock %}
+{% block page_title %}Auto Upload{% endblock %}
+{% block page_subtitle %}Queue and upload clips to your connected accounts{% endblock %}
 
 {% block topbar_actions %}
-<div style="display:flex;align-items:center;gap:10px">
-    <div style="font-size:13px;color:var(--text-muted)">
-        <span style="color:var(--accent);font-weight:700">{{ pending_count }}</span> pending
-        &nbsp;·&nbsp;
-        <span style="color:var(--green);font-weight:700">{{ posted_count }}</span> posted
-    </div>
-    {% if pending_count > 0 or posted_count > 0 %}
-    <form method="POST" action="/queue/clear-posted" style="display:inline">
-        <button type="submit" class="btn btn-secondary btn-sm">🗑 Clear Posted</button>
-    </form>
-    {% endif %}
-    <a href="/viral-finder" class="btn btn-primary btn-sm">+ Add Videos</a>
-</div>
+<button class="btn btn-secondary" onclick="window.location.reload()">↺ Refresh</button>
+<button class="btn btn-primary" onclick="triggerUploadNow()" id="upload-now-btn">
+    ⚡ Upload Now
+</button>
 {% endblock %}
 
 {% block content %}
+<style>
+.upload-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px}
+.queue-row{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border)}
+.queue-row:last-child{border-bottom:none}
+.queue-thumb{width:80px;height:50px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:20px}
+.status-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.status-pending{background:rgba(251,191,36,.15);color:#fbbf24}
+.status-posted{background:rgba(74,222,128,.15);color:#4ade80}
+.status-uploading{background:rgba(127,119,221,.15);color:var(--accent)}
+.status-failed{background:rgba(248,113,113,.15);color:#f87171}
+.slot-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.slot-row:last-child{border-bottom:none}
+.slot-time{font-size:15px;font-weight:700;color:var(--accent);width:60px}
+.progress-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:6px}
+.progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
+.upload-log{background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:monospace;font-size:11px;max-height:160px;overflow-y:auto;line-height:1.7}
+.log-ok{color:#4ade80}
+.log-err{color:#f87171}
+.log-info{color:var(--accent)}
+.log-warn{color:#fbbf24}
+.platform-icon{width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+</style>
 
-<!-- Tab filters -->
-<div style="display:flex;gap:4px;margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px;width:fit-content">
-    <button onclick="setTab('all')"     id="tab-all"     class="tab-btn active">All <span class="tab-count">{{ queue|length }}</span></button>
-    <button onclick="setTab('pending')" id="tab-pending" class="tab-btn">Pending <span class="tab-count">{{ pending_count }}</span></button>
-    <button onclick="setTab('posted')"  id="tab-posted"  class="tab-btn">Posted <span class="tab-count">{{ posted_count }}</span></button>
+<!-- Stats -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+    <div class="upload-card" style="text-align:center;padding:14px">
+        <div style="font-size:24px;font-weight:700;color:var(--accent)">{{ pending_count }}</div>
+        <div style="font-size:12px;color:var(--text-muted)">Pending Upload</div>
+    </div>
+    <div class="upload-card" style="text-align:center;padding:14px">
+        <div style="font-size:24px;font-weight:700;color:#4ade80">{{ posted_count }}</div>
+        <div style="font-size:12px;color:var(--text-muted)">Uploaded</div>
+    </div>
+    <div class="upload-card" style="text-align:center;padding:14px">
+        <div style="font-size:24px;font-weight:700;color:var(--text)">{{ slots|length }}</div>
+        <div style="font-size:12px;color:var(--text-muted)">Upload Slots</div>
+    </div>
+    <div class="upload-card" style="text-align:center;padding:14px">
+        <div style="font-size:24px;font-weight:700;color:{% if yt_connected %}#4ade80{% else %}#f87171{% endif %}">
+            {% if yt_connected %}●{% else %}○{% endif %}
+        </div>
+        <div style="font-size:12px;color:var(--text-muted)">YouTube {% if yt_connected %}Connected{% else %}Disconnected{% endif %}</div>
+    </div>
 </div>
 
-{% if queue %}
-<div id="queue-list" style="display:flex;flex-direction:column;gap:8px;max-width:860px">
-    {% for item in queue %}
-    <div class="q-row" id="qrow-{{ item.id }}" data-id="{{ item.id }}" data-status="{{ item.status }}"
-         style="display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:opacity 0.2s;{% if item.status == 'posted' %}opacity:0.55{% endif %}">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
 
-        <!-- Drag handle -->
-        <div class="drag-handle" title="Drag to reorder"
-             style="cursor:grab;color:var(--text-faint);font-size:18px;padding:0 4px;flex-shrink:0;user-select:none">⠿</div>
-
-        <!-- Position badge -->
-        <div class="pos-badge" style="width:24px;height:24px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text-muted);flex-shrink:0">
-            {{ loop.index }}
+    <!-- Queue -->
+    <div class="upload-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-size:14px;font-weight:700;color:var(--text)">📋 Upload Queue</div>
+            {% if queue %}
+            <form method="POST" action="/queue/clear-posted" style="display:inline">
+                <button type="submit" class="btn btn-secondary" style="font-size:11px">Clear Uploaded</button>
+            </form>
+            {% endif %}
         </div>
 
-        <!-- Thumbnail -->
-        {% if item.thumbnail %}
-        <img src="{{ item.thumbnail }}" style="width:80px;height:45px;object-fit:cover;border-radius:6px;flex-shrink:0">
+        {% if queue %}
+        {% for item in queue %}
+        <div class="queue-row" id="qrow-{{ item.id }}">
+            <div class="queue-thumb">
+                {% if item.thumbnail %}
+                <img src="{{ item.thumbnail }}" style="width:80px;height:50px;object-fit:cover;border-radius:8px">
+                {% else %}▶{% endif %}
+            </div>
+            <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+                    {{ item.title }}
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                    <span class="status-badge status-{{ item.status }}">
+                        {% if item.status == 'pending' %}⏳ Pending
+                        {% elif item.status == 'posted' %}✓ Uploaded
+                        {% elif item.status == 'uploading' %}⬆ Uploading
+                        {% else %}✗ Failed{% endif %}
+                    </span>
+                    <span style="font-size:11px;color:var(--text-faint)">{{ item.duration }}s · {{ item.genre }}</span>
+                </div>
+                <div id="progress-{{ item.id }}" style="display:none">
+                    <div class="progress-bar"><div class="progress-fill" id="pbar-{{ item.id }}" style="width:0%"></div></div>
+                    <div style="font-size:10px;color:var(--text-faint);margin-top:2px" id="ptext-{{ item.id }}">Preparing...</div>
+                </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+                {% if item.status == 'pending' %}
+                <button class="btn btn-primary" style="font-size:11px;padding:5px 10px"
+                    onclick="uploadNow({{ item.id }}, '{{ item.title|replace("'","\\'") }}', this)">
+                    ⬆ Upload
+                </button>
+                {% elif item.status == 'posted' %}
+                <span style="font-size:11px;color:#4ade80;font-weight:600">✓ Done</span>
+                {% endif %}
+                <form method="POST" action="/queue/remove/{{ item.id }}" style="display:inline">
+                    <button type="submit" class="btn btn-secondary" style="font-size:10px;padding:3px 8px;color:#f87171">✕</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
         {% else %}
-        <div style="width:80px;height:45px;background:linear-gradient(135deg,#1a1527,#0e1527);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">▶</div>
+        <div style="text-align:center;padding:30px;color:var(--text-faint)">
+            <div style="font-size:32px;margin-bottom:8px">📭</div>
+            <div style="font-size:13px">Queue is empty</div>
+            <a href="/viral-finder" style="color:var(--accent);font-size:12px">Add clips from Viral Finder →</a>
+        </div>
         {% endif %}
+    </div>
 
-        <!-- Info -->
-        <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.title }}</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap">
-                <span style="font-size:11px;color:var(--text-muted)">{{ item.channel }}</span>
-                <span class="badge
-                    {% if item.genre == 'Automotive' %}badge-auto
-                    {% elif item.genre == 'Food' %}badge-food
-                    {% elif item.genre == 'DIY' %}badge-diy
-                    {% elif item.genre == 'Tech' %}badge-tech
-                    {% elif item.genre == 'Gaming' %}badge-yellow
-                    {% else %}badge-life{% endif %}" style="font-size:10px">{{ item.genre }}</span>
-                <span class="badge badge-purple" style="font-size:10px">{{ item.duration }}s</span>
-                <span style="font-size:11px;color:var(--text-faint)">Score {{ item.score }}</span>
+    <!-- Schedule slots + Log -->
+    <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- Upload slots -->
+        <div class="upload-card">
+            <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px">🕐 Daily Upload Slots</div>
+            {% if slots %}
+            {% for slot in slots %}
+            <div class="slot-row">
+                <div class="slot-time">{{ slot.slot_time }}</div>
+                <div style="flex:1;font-size:12px;color:var(--text-muted)">Daily auto-upload</div>
+                <span style="font-size:11px;font-weight:600;color:{% if slot.enabled %}#4ade80{% else %}#6b7280{% endif %}">
+                    {% if slot.enabled %}Active{% else %}Off{% endif %}
+                </span>
             </div>
-            <!-- Inline notes -->
-            <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
-                <input
-                    type="text"
-                    class="notes-input"
-                    data-id="{{ item.id }}"
-                    value="{{ item.notes | e }}"
-                    placeholder="Add caption / posting notes…"
-                    maxlength="280"
-                    style="flex:1;background:transparent;border:none;border-bottom:1px solid transparent;border-radius:0;padding:2px 0;font-size:12px;color:var(--text-muted);outline:none;transition:border-color 0.15s;min-width:0"
-                    onfocus="this.style.borderBottomColor='var(--accent)';this.style.color='var(--text)'"
-                    onblur="saveNotes(this)"
-                    onkeydown="if(event.key==='Enter'){this.blur()}"
-                >
-                <span class="notes-saved" id="notes-saved-{{ item.id }}"
-                      style="font-size:11px;color:var(--green);opacity:0;transition:opacity 0.3s;flex-shrink:0;white-space:nowrap">✓ saved</span>
+            {% endfor %}
+            {% else %}
+            <div style="font-size:12px;color:var(--text-faint)">No slots configured. <a href="/schedule" style="color:var(--accent)">Set up schedule →</a></div>
+            {% endif %}
+            <div style="margin-top:10px;font-size:11px;color:var(--text-faint)">
+                ⚠ Auto-upload requires a scheduler service. Use "Upload Now" button to manually trigger uploads.
             </div>
         </div>
 
-        <!-- Slot assignment -->
-        <div style="flex-shrink:0;min-width:130px">
-            <select class="slot-select"
-                    data-id="{{ item.id }}"
-                    onchange="assignSlot(this)"
-                    style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--text);outline:none;width:100%;cursor:pointer">
-                <option value="">No slot</option>
-                {% for slot in slots %}
-                <option value="{{ slot.id }}" {% if item.assigned_slot == slot.id %}selected{% endif %}>
-                    🕐 {{ slot.slot_time }}{% if not slot.enabled %} (off){% endif %}
-                </option>
-                {% endfor %}
+        <!-- Connected accounts -->
+        <div class="upload-card">
+            <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px">🔗 Connected Accounts</div>
+            {% if connected_accounts %}
+            {% set platform_icons = {"YouTube":"🎬","TikTok":"📱","Instagram":"📸","Facebook":"👥"} %}
+            {% for acc in connected_accounts %}
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+                <span style="font-size:18px">{{ platform_icons.get(acc.platform, "🌐") }}</span>
+                <div style="flex:1">
+                    <div style="font-size:13px;font-weight:600;color:var(--text)">@{{ acc.username }}</div>
+                    <div style="font-size:11px;color:var(--text-faint)">{{ acc.platform }}</div>
+                </div>
+                <span style="font-size:11px;font-weight:600;color:{% if acc.enabled %}#4ade80{% else %}#6b7280{% endif %}">
+                    {% if acc.enabled %}Active{% else %}Off{% endif %}
+                </span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div style="font-size:12px;color:var(--text-faint)">No accounts connected. <a href="/accounts" style="color:var(--accent)">Connect accounts →</a></div>
+            {% endif %}
+        </div>
+
+        <!-- Upload log -->
+        <div class="upload-card">
+            <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px">📋 Upload Log</div>
+            <div class="upload-log" id="upload-log">
+                <div class="log-info">→ Ready. Click "Upload Now" or "⬆ Upload" on a clip.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload modal -->
+<div id="upload-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:400;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:440px;padding:24px">
+        <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:16px">⬆ Upload to YouTube</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px" id="modal-clip-name"></div>
+
+        <div style="margin-bottom:12px">
+            <label style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px;display:block">VIDEO FILE</label>
+            <div style="font-size:12px;color:var(--text-faint);background:var(--surface2);border:1px dashed var(--border);border-radius:8px;padding:12px;text-align:center">
+                <input type="file" id="video-file-input" accept="video/*" style="display:none" onchange="fileSelected(this)">
+                <div id="file-drop-area" onclick="document.getElementById('video-file-input').click()" style="cursor:pointer">
+                    <div style="font-size:24px;margin-bottom:4px">📁</div>
+                    <div>Click to select video file (MP4)</div>
+                    <div style="font-size:11px;margin-top:4px;color:var(--text-faint)" id="file-name-display">No file selected</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+            <label style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px;display:block">TITLE</label>
+            <input type="text" id="upload-title" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text);outline:none;font-family:inherit" placeholder="Video title...">
+        </div>
+
+        <div style="margin-bottom:12px">
+            <label style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px;display:block">DESCRIPTION & CAPTION</label>
+            <textarea id="upload-desc" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text);outline:none;resize:vertical;min-height:80px;font-family:inherit" placeholder="Caption and hashtags..."></textarea>
+        </div>
+
+        <div style="margin-bottom:16px">
+            <label style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px;display:block">PRIVACY</label>
+            <select id="upload-privacy" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--text);outline:none;font-family:inherit">
+                <option value="public">Public</option>
+                <option value="unlisted">Unlisted</option>
+                <option value="private">Private</option>
             </select>
         </div>
 
-        <!-- Status badge -->
-        <div style="flex-shrink:0;width:80px;text-align:center">
-            {% if item.status == 'posted' %}
-            <span class="badge badge-green">✓ Posted</span>
-            {% elif item.assigned_slot %}
-            <span class="badge badge-purple">Scheduled</span>
-            {% else %}
-            <span class="badge" style="background:var(--surface2);color:var(--text-faint)">Pending</span>
-            {% endif %}
+        <div id="upload-progress-wrap" style="display:none;margin-bottom:12px">
+            <div class="progress-bar" style="height:8px"><div class="progress-fill" id="modal-pbar" style="width:0%"></div></div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px" id="modal-ptext">Uploading...</div>
         </div>
 
-        <!-- Actions -->
-        <div style="display:flex;gap:6px;flex-shrink:0">
-            {% if item.status == 'pending' %}
-            <button onclick="markPosted({{ item.id }}, this)"
-                    class="btn btn-secondary btn-sm"
-                    title="Mark as posted"
-                    style="font-size:12px">✓ Posted</button>
-            {% else %}
-            <button onclick="markPending({{ item.id }}, this)"
-                    class="btn btn-secondary btn-sm"
-                    title="Move back to pending"
-                    style="font-size:12px;color:var(--text-muted)">↩ Undo</button>
-            {% endif %}
-            <form method="POST" action="/queue/remove/{{ item.id }}" style="display:inline"
-                  onsubmit="return confirm('Remove from queue?')">
-                <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Remove">🗑</button>
-            </form>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
+            <button class="btn btn-primary" id="confirm-upload-btn" onclick="confirmUpload()">⬆ Upload to YouTube</button>
         </div>
     </div>
-    {% endfor %}
 </div>
 
-{% else %}
-<div style="max-width:860px">
-    <div class="card" style="text-align:center;padding:60px 20px">
-        <div style="font-size:48px;margin-bottom:14px">📋</div>
-        <div style="font-size:17px;font-weight:600;color:var(--text-muted)">Queue is Empty</div>
-        <div style="font-size:13px;color:var(--text-faint);margin-top:8px;margin-bottom:20px">
-            Go to Viral Finder, scan for trending videos, and click <strong style="color:var(--text)">Add to Queue</strong>.
-        </div>
-        <a href="/viral-finder" class="btn btn-primary">🔥 Find Viral Videos</a>
-    </div>
-</div>
-{% endif %}
-
-<!-- Reorder saved toast -->
-<div id="reorder-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;color:var(--text-muted);z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.5)">
-    ✓ Order saved
-</div>
-
-<style>
-.tab-btn {
-    padding: 6px 14px;
-    border-radius: 6px;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.14s;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.tab-btn.active { background: var(--surface2); color: var(--text); }
-.tab-btn:hover:not(.active) { color: var(--text); }
-.tab-count {
-    background: var(--surface2);
-    border-radius: 10px;
-    padding: 1px 7px;
-    font-size: 11px;
-    color: var(--text-faint);
-}
-.tab-btn.active .tab-count { background: var(--border); color: var(--text-muted); }
-.q-row.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
-.drag-handle:active { cursor: grabbing; }
-.sortable-ghost { opacity: 0.3; background: var(--accent-dim) !important; border-color: var(--accent) !important; }
-.sortable-chosen { box-shadow: 0 4px 20px rgba(127,119,221,0.25); }
-</style>
-
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
-const sortable = Sortable.create(document.getElementById('queue-list'), {
-    handle: '.drag-handle',
-    animation: 150,
-    ghostClass: 'sortable-ghost',
-    chosenClass: 'sortable-chosen',
-    onEnd: function() {
-        updatePositionBadges();
-        saveOrder();
+let currentUploadQueueId = null;
+let selectedFile = null;
+
+function addLog(msg, type='info') {
+    const log = document.getElementById('upload-log');
+    const div = document.createElement('div');
+    div.className = 'log-' + type;
+    const time = new Date().toLocaleTimeString();
+    div.textContent = `[${time}] ${msg}`;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
+function uploadNow(queueId, title, btn) {
+    currentUploadQueueId = queueId;
+    document.getElementById('upload-title').value = title;
+    document.getElementById('upload-desc').value = '';
+    document.getElementById('modal-clip-name').textContent = title;
+    document.getElementById('file-name-display').textContent = 'No file selected';
+    selectedFile = null;
+    document.getElementById('upload-modal').style.display = 'flex';
+}
+
+function triggerUploadNow() {
+    const firstPending = document.querySelector('[id^="qrow-"]');
+    if (!firstPending) {
+        addLog('No clips in queue. Add clips from Viral Finder first.', 'warn');
+        return;
     }
+    const btn = firstPending.querySelector('.btn-primary');
+    if (btn) btn.click();
+}
+
+function fileSelected(input) {
+    if (input.files && input.files[0]) {
+        selectedFile = input.files[0];
+        document.getElementById('file-name-display').textContent = selectedFile.name + ' (' + (selectedFile.size/1024/1024).toFixed(1) + 'MB)';
+    }
+}
+
+function closeUploadModal() {
+    document.getElementById('upload-modal').style.display = 'none';
+    document.getElementById('upload-progress-wrap').style.display = 'none';
+    document.getElementById('modal-pbar').style.width = '0%';
+}
+
+document.getElementById('upload-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeUploadModal();
 });
 
-function updatePositionBadges() {
-    document.querySelectorAll('#queue-list .q-row').forEach((row, i) => {
-        const badge = row.querySelector('.pos-badge');
-        if (badge) badge.textContent = i + 1;
-    });
-}
-
-async function saveOrder() {
-    const ids = [...document.querySelectorAll('#queue-list .q-row')].map(r => parseInt(r.dataset.id));
-    await fetch('/queue/reorder', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ids})
-    });
-    showToast('reorder-toast');
-}
-
-async function assignSlot(sel) {
-    const id = sel.dataset.id;
-    const slotId = sel.value;
-    const row = document.getElementById('qrow-' + id);
-    const statusEl = row.querySelector('[style*="width:80px"]');
-    const res = await fetch('/queue/assign-slot/' + id, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({slot_id: slotId || null})
-    });
-    const data = await res.json();
-    if (data.ok && statusEl) {
-        if (row.dataset.status === 'posted') return;
-        statusEl.innerHTML = slotId
-            ? '<span class="badge badge-purple">Scheduled</span>'
-            : '<span class="badge" style="background:var(--surface2);color:var(--text-faint)">Pending</span>';
+async function confirmUpload() {
+    if (!selectedFile) {
+        alert('Please select a video file first.');
+        return;
     }
-}
 
-async function markPosted(id, btn) {
-    const res = await fetch('/queue/mark-posted/' + id, { method: 'POST' });
-    const data = await res.json();
-    if (data.ok) {
-        const row = document.getElementById('qrow-' + id);
-        row.dataset.status = 'posted';
-        row.style.opacity = '0.55';
-        const statusEl = row.querySelector('[style*="width:80px"]');
-        if (statusEl) statusEl.innerHTML = '<span class="badge badge-green">✓ Posted</span>';
-        btn.outerHTML = '<button onclick="markPending(' + id + ', this)" class="btn btn-secondary btn-sm" style="font-size:12px;color:var(--text-muted)" title="Undo">↩ Undo</button>';
-        updateCounts(data.pending_count, data.posted_count);
-    }
-}
+    const title = document.getElementById('upload-title').value.trim();
+    const description = document.getElementById('upload-desc').value.trim();
+    const privacy = document.getElementById('upload-privacy').value;
 
-async function markPending(id, btn) {
-    const res = await fetch('/queue/mark-pending/' + id, { method: 'POST' });
-    const data = await res.json();
-    if (data.ok) {
-        const row = document.getElementById('qrow-' + id);
-        row.dataset.status = 'pending';
-        row.style.opacity = '1';
-        const statusEl = row.querySelector('[style*="width:80px"]');
-        const slot = row.querySelector('.slot-select').value;
-        if (statusEl) statusEl.innerHTML = slot
-            ? '<span class="badge badge-purple">Scheduled</span>'
-            : '<span class="badge" style="background:var(--surface2);color:var(--text-faint)">Pending</span>';
-        btn.outerHTML = '<button onclick="markPosted(' + id + ', this)" class="btn btn-secondary btn-sm" style="font-size:12px" title="Mark as posted">✓ Posted</button>';
-        updateCounts(data.pending_count, data.posted_count);
-    }
-}
+    if (!title) { alert('Please enter a title.'); return; }
 
-function updateCounts(pending, posted) {
-    document.querySelectorAll('.tab-count')[0].textContent = pending + posted;
-    document.querySelectorAll('.tab-count')[1].textContent = pending;
-    document.querySelectorAll('.tab-count')[2].textContent = posted;
-    document.querySelector('.topbar-right [style*="text-align"]')
-    const spans = document.querySelectorAll('.topbar-right span[style*="font-weight:700"]');
-    if (spans[0]) spans[0].textContent = pending;
-    if (spans[1]) spans[1].textContent = posted;
-}
+    const btn = document.getElementById('confirm-upload-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Uploading...';
+    document.getElementById('upload-progress-wrap').style.display = 'block';
+    document.getElementById('modal-pbar').style.width = '10%';
+    document.getElementById('modal-ptext').textContent = 'Preparing upload...';
 
-function setTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('tab-' + tab).classList.add('active');
-    document.querySelectorAll('.q-row').forEach(row => {
-        if (tab === 'all') row.style.display = '';
-        else row.style.display = row.dataset.status === tab ? '' : 'none';
-    });
-}
+    addLog(`Starting upload: "${title}"`, 'info');
 
-function showToast(id) {
-    const t = document.getElementById(id);
-    t.style.display = 'block';
-    setTimeout(() => t.style.display = 'none', 1800);
-}
+    try {
+        const formData = new FormData();
+        formData.append('video', selectedFile);
+        formData.append('title', title);
+        formData.append('description', description);
+        formData.append('privacy', privacy);
+        formData.append('queue_id', currentUploadQueueId || '');
 
-let notesSaveTimers = {};
-async function saveNotes(input) {
-    const id = input.dataset.id;
-    input.style.borderBottomColor = 'transparent';
-    input.style.color = 'var(--text-muted)';
-    clearTimeout(notesSaveTimers[id]);
-    notesSaveTimers[id] = setTimeout(async () => {
-        const res = await fetch('/queue/update-notes/' + id, {
+        document.getElementById('modal-pbar').style.width = '30%';
+        document.getElementById('modal-ptext').textContent = 'Uploading to YouTube...';
+        addLog('Sending to YouTube...', 'info');
+
+        const resp = await fetch('/upload/youtube', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({notes: input.value})
+            body: formData
         });
-        const data = await res.json();
+
+        document.getElementById('modal-pbar').style.width = '80%';
+        const data = await resp.json();
+
         if (data.ok) {
-            const indicator = document.getElementById('notes-saved-' + id);
-            if (indicator) {
-                indicator.style.opacity = '1';
-                setTimeout(() => indicator.style.opacity = '0', 1600);
-            }
+            document.getElementById('modal-pbar').style.width = '100%';
+            document.getElementById('modal-ptext').textContent = '✓ Upload successful!';
+            addLog(`✓ Uploaded successfully! YouTube URL: ${data.url}`, 'ok');
+            addLog(`Video ID: ${data.video_id}`, 'ok');
+            setTimeout(() => {
+                closeUploadModal();
+                window.location.reload();
+            }, 2000);
+        } else {
+            throw new Error(data.error || 'Upload failed');
         }
-    }, 400);
+    } catch(e) {
+        document.getElementById('modal-pbar').style.width = '0%';
+        document.getElementById('modal-ptext').textContent = '✗ ' + e.message;
+        addLog('✗ Error: ' + e.message, 'err');
+        btn.disabled = false;
+        btn.textContent = '⬆ Upload to YouTube';
+    }
 }
 </script>
 {% endblock %}
