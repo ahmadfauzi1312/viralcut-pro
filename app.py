@@ -70,7 +70,7 @@ def _upsert_setting(conn, key, value):
         )
     else:
         conn.execute(
-            "_upsert_setting(conn, key, value) (key, value) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             (key, value)
         )
 
@@ -343,10 +343,7 @@ def oauth_save_creds(platform):
     for field, _ in cfg["cred_fields"]:
         val = request.form.get(field, "").strip()
         if val:
-            conn.execute(
-                "_upsert_setting(conn, key, value) (key, value) VALUES (?, ?)",
-                (f"oauth_{platform}_{field}", val),
-            )
+            _upsert_setting(conn, f"oauth_{platform}_{field}", val)
     conn.commit()
     conn.close()
     flash(f"{cfg['label']} credentials saved.", "success")
@@ -825,7 +822,7 @@ def settings_update():
         ("viral_score_min", viral_score_min),
         ("clips_per_day", clips_per_day),
     ]:
-        conn.execute("_upsert_setting(conn, key, value) (key, value) VALUES (?, ?)", (key, val))
+        _upsert_setting(conn, key, val)
     conn.commit()
     conn.close()
     flash("Settings saved.", "success")
@@ -839,7 +836,7 @@ def settings_save_api_key():
         flash("API key cannot be empty.", "error")
         return redirect(url_for("settings"))
     conn = get_db()
-    conn.execute("_upsert_setting(conn, key, value) (key, value) VALUES (?, ?)", ("youtube_api_key", key))
+    _upsert_setting(conn, "youtube_api_key", key)
     conn.commit()
     conn.close()
     flash("YouTube API key saved.", "success")
@@ -999,8 +996,7 @@ def process_clip_route():
     try:
         result = process_full_pipeline(video_id, start_sec, end_sec, output_format, quality, caption, remove_bgm)
         conn = get_db()
-        conn.execute("_upsert_setting(conn, key, value) (key,value) VALUES (?,?)",
-                    (f"clip_file_{video_id}", result["clip_filename"]))
+        _upsert_setting(conn, f"clip_file_{video_id}", result["clip_filename"])
         conn.commit()
         conn.close()
         return jsonify(result)
