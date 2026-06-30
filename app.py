@@ -858,42 +858,72 @@ def privacy():
 
 @app.route("/upload/youtube", methods=["POST"])
 def upload_youtube():
-    api_key = get_api_key()
+    data = request.get_json(silent=True) or {}
+    queue_id = data.get("queue_id", "")
+    if not queue_id:
+        return jsonify({"ok": False, "error": "queue_id required"}), 400
+
+    conn = get_db()
+    item = conn.execute("SELECT * FROM queue WHERE id=?", (queue_id,)).fetchone()
+    conn.close()
+    if not item:
+        return jsonify({"ok": False, "error": "Queue item not found"}), 404
+
     settings = get_settings()
     domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
     redirect_uri = f"https://{domain}/oauth/callback/youtube"
+
     try:
+        from youtube_upload import get_valid_access_token, upload_video_to_youtube
+        from video_processor import process_full_pipeline, CLIPS_DIR
+
         token_result = get_valid_access_token(settings, redirect_uri)
-        if isinstance(token_result, tuple):
-            access_token, token_data = token_result
-            conn = get_db()
-            import json
-            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                        ("oauth_youtube_token_data", json.dumps(token_data)))
-            conn.commit()
-            conn.close()
-        else:
-            access_token = token_result
-        f = request.files.get("video")
-        if not f:
-            return jsonify({"ok": False, "error": "No video file"}), 400
-        import tempfile, uuid
-        ext = os.path.splitext(f.filename)[1] or ".mp4"
-        tmp_path = os.path.join("/tmp", f"{uuid.uuid4().hex}{ext}")
-        f.save(tmp_path)
-        title = request.form.get("title", "ViralCut Pro Upload")
-        description = request.form.get("description", "")
-        privacy = request.form.get("privacy", "public")
-        queue_id = request.form.get("queue_id", "")
-        result = upload_video_to_youtube(access_token, tmp_path, title, description, privacy=privacy)
-        os.remove(tmp_path)
-        if queue_id:
-            conn = get_db()
-            conn.execute("UPDATE queue SET status='posted' WHERE id=?", (queue_id,))
-            conn.commit()
-            conn.close()
-        return jsonify(result)
+        access_token = token_result[0] if isinstance(token_result, tuple) else token_result
+
+        video_id = item["video_id"]
+        title = item["title"] or "ViralCut Pro"
+        caption = item["notes"] or ""
+        duration = item["duration"] or 60
+
+        conn = get_db()
+        conn.execute("UPDATE queue SET status='processing' WHERE id=?", (queue_id,))
+        conn.commit()
+        conn.close()
+
+        result = process_full_pipeline(
+            video_id=video_id,
+            start_sec=0,
+            end_sec=duration,
+            output_format="portrait",
+            quality="720p",
+            remove_bgm=False,
+        )
+
+        upload_result = upload_video_to_youtube(
+            access_token=access_token,
+            video_path=result["clip_path"],
+            title=title[:100],
+            description=caption,
+            tags=["viral","trending","shorts","indonesia"],
+            privacy="public",
+        )
+
+        import os as _os
+        if _os.path.exists(result["clip_path"]):
+            _os.remove(result["clip_path"])
+
+        conn = get_db()
+        conn.execute("UPDATE queue SET status='posted' WHERE id=?", (queue_id,))
+        conn.commit()
+        conn.close()
+
+        return jsonify(upload_result)
+
     except Exception as e:
+        conn = get_db()
+        conn.execute("UPDATE queue SET status='failed' WHERE id=?", (queue_id,))
+        conn.commit()
+        conn.close()
         return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/upload/channel-info")
