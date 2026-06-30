@@ -1,7 +1,7 @@
 import os
+import re
 import sqlite3
 
-# Try to use PostgreSQL if DATABASE_URL is available, otherwise fall back to SQLite
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 if DATABASE_URL and DATABASE_URL.startswith("postgres"):
@@ -15,19 +15,14 @@ else:
     USE_POSTGRES = False
 
 
-# ── PostgreSQL connection ────────────────────────────────────────────────────
-
 def get_pg_conn():
     url = DATABASE_URL
-    # Railway uses postgres:// but psycopg2 needs postgresql://
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
     conn.autocommit = False
     return conn
 
-
-# ── SQLite connection (fallback) ─────────────────────────────────────────────
 
 def get_sqlite_conn():
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "viralcut.db")
@@ -36,11 +31,54 @@ def get_sqlite_conn():
     return conn
 
 
-# ── Unified connection wrapper ───────────────────────────────────────────────
+# Map of table_name -> primary/unique key column(s) for ON CONFLICT clause
+TABLE_CONFLICT_KEYS = {
+    "settings": "key",
+    "captions": "video_id",
+}
+
+
+def _translate_sql(sql: str) -> str:
+    """
+    Translate SQLite-specific SQL to PostgreSQL-compatible SQL.
+    Handles: ? -> %s, INSERT OR REPLACE -> INSERT ... ON CONFLICT DO UPDATE,
+             AUTOINCREMENT -> SERIAL (not needed at runtime, only DDL)
+    """
+    original = sql
+
+    # Handle INSERT OR REPLACE INTO table_name (...)
+    m = re.match(
+        r'\s*INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)',
+        sql, re.IGNORECASE
+    )
+    if m:
+        table = m.group(1)
+        columns_raw = [c.strip() for c in m.group(2).split(",")]
+        placeholders = [p.strip() for p in m.group(3).split(",")]
+
+        conflict_key = TABLE_CONFLICT_KEYS.get(table, columns_raw[0])
+
+        # Build the new query
+        update_clauses = []
+        for col in columns_raw:
+            if col != conflict_key:
+                update_clauses.append(f"{col} = EXCLUDED.{col}")
+
+        new_sql = (
+            f"INSERT INTO {table} ({', '.join(columns_raw)}) "
+            f"VALUES ({', '.join(placeholders)}) "
+            f"ON CONFLICT ({conflict_key}) DO UPDATE SET "
+            f"{', '.join(update_clauses) if update_clauses else f'{conflict_key} = EXCLUDED.{conflict_key}'}"
+        )
+        sql = new_sql
+
+    # Convert ? placeholders to %s (but only outside of already-converted parts)
+    sql = sql.replace("?", "%s")
+
+    return sql
+
 
 class UnifiedConn:
-    """Wraps psycopg2 or sqlite3 connection with a unified interface."""
-
     def __init__(self):
         if USE_POSTGRES:
             self._conn = get_pg_conn()
@@ -50,15 +88,18 @@ class UnifiedConn:
             self._pg = False
 
     def execute(self, sql, params=()):
-        # Convert SQLite ? placeholders to PostgreSQL %s
         if self._pg:
-            sql = sql.replace("?", "%s")
-            # Convert INSERT OR REPLACE to INSERT ... ON CONFLICT DO UPDATE
-            if sql.strip().upper().startswith("INSERT OR REPLACE"):
-                sql = sql.replace("INSERT OR REPLACE", "INSERT", 1)
-                # We'll handle conflicts per-table below via upsert helper
+            sql = _translate_sql(sql)
         cur = self._conn.cursor()
-        cur.execute(sql, params)
+        try:
+            cur.execute(sql, params)
+        except Exception as e:
+            # Rollback on error to keep connection usable
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            raise e
         return UnifiedCursor(cur, self._pg)
 
     def commit(self):
@@ -75,8 +116,6 @@ class UnifiedConn:
 
 
 class UnifiedCursor:
-    """Wraps cursor to provide fetchall/fetchone that return dict-like rows."""
-
     def __init__(self, cur, is_pg):
         self._cur = cur
         self._pg = is_pg
@@ -100,7 +139,7 @@ class UnifiedCursor:
         if self._pg:
             try:
                 self._cur.execute("SELECT lastval()")
-                return self._cur.fetchone()[0]
+                return self._cur.fetchone()["lastval"]
             except Exception:
                 return None
         return self._cur.lastrowid
@@ -109,8 +148,6 @@ class UnifiedCursor:
 def get_db():
     return UnifiedConn()
 
-
-# ── Schema ───────────────────────────────────────────────────────────────────
 
 def init_db():
     conn = get_db()
@@ -176,7 +213,6 @@ def _init_sqlite(conn):
         status TEXT DEFAULT 'scheduled',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
-    # Seed default schedule slots
     existing = conn.execute("SELECT COUNT(*) as c FROM schedule").fetchone()
     c = existing['c'] if isinstance(existing, dict) else existing[0]
     if c == 0:
@@ -238,12 +274,6 @@ def _init_postgres(conn):
         status TEXT DEFAULT 'scheduled',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
-    # Upsert for settings needs special handling in postgres
-    conn.execute("""CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT
-    )""")
-    # Seed default schedule slots if empty
     existing = conn.execute("SELECT COUNT(*) as c FROM schedule").fetchone()
     c = existing['c'] if isinstance(existing, dict) else existing[0]
     if c == 0:
