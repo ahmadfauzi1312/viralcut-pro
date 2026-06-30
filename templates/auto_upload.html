@@ -175,12 +175,6 @@
     </div>
 </div>
 
-<!-- Upload modal -->
-<div id="upload-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:400;align-items:center;justify-content:center;padding:20px">
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;width:100%;max-width:440px;padding:24px">
-        <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:16px">⬆ Upload to YouTube</div>
-        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px" id="modal-clip-name"></div>
-
         <div style="margin-bottom:12px">
             <label style="font-size:12px;font-weight:600;color:var(--text-faint);margin-bottom:6px;display:block">VIDEO FILE</label>
             <div style="font-size:12px;color:var(--text-faint);background:var(--surface2);border:1px dashed var(--border);border-radius:8px;padding:12px;text-align:center">
@@ -239,23 +233,44 @@ function addLog(msg, type='info') {
 }
 
 function uploadNow(queueId, title, btn) {
-    currentUploadQueueId = queueId;
-    document.getElementById('upload-title').value = title;
-    document.getElementById('upload-desc').value = '';
-    document.getElementById('modal-clip-name').textContent = title;
-    document.getElementById('file-name-display').textContent = 'No file selected';
-    selectedFile = null;
-    document.getElementById('upload-modal').style.display = 'flex';
+    if (!confirm(`Upload "${title}" to YouTube now?`)) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ Processing...';
+    addLog(`Starting: "${title}"`, 'info');
+
+    const row = document.getElementById('qrow-' + queueId);
+    if (row) {
+        const prog = document.getElementById('progress-' + queueId);
+        if (prog) prog.style.display = 'block';
+    }
+
+    fetch('/upload/youtube', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({queue_id: String(queueId)})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            addLog(`✓ Uploaded! URL: ${data.url}`, 'ok');
+            btn.textContent = '✓ Done';
+            btn.style.background = '#16a34a';
+            setTimeout(() => window.location.reload(), 2000);
+        } else {
+            throw new Error(data.error);
+        }
+    })
+    .catch(e => {
+        addLog('✗ Error: ' + e.message, 'err');
+        btn.disabled = false;
+        btn.textContent = '⬆ Upload';
+    });
 }
 
 function triggerUploadNow() {
-    const firstPending = document.querySelector('[id^="qrow-"]');
-    if (!firstPending) {
-        addLog('No clips in queue. Add clips from Viral Finder first.', 'warn');
-        return;
-    }
-    const btn = firstPending.querySelector('.btn-primary');
-    if (btn) btn.click();
+    const firstBtn = document.querySelector('.btn-primary[onclick*="uploadNow"]');
+    if (firstBtn) firstBtn.click();
+    else addLog('No pending clips in queue.', 'warn');
 }
 
 function fileSelected(input) {
