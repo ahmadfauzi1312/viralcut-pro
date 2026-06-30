@@ -59,6 +59,20 @@ def filter_videos(videos, min_score, genres):
     genre_list = [g.strip() for g in genres.split(",") if g.strip()]
     return [v for v in videos if v["score"] >= min_score and (not genre_list or v["genre"] in genre_list)]
 
+def _upsert_setting(conn, key, value):
+    """Upsert a setting - works for both SQLite and PostgreSQL."""
+    from db import USE_POSTGRES
+    if USE_POSTGRES:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            (key, value)
+        )
+    else:
+        conn.execute(
+            "_upsert_setting(conn, key, value) (key, value) VALUES (?, ?)",
+            (key, value)
+        )
 
 @app.route("/healthz")
 def healthz():
@@ -330,7 +344,7 @@ def oauth_save_creds(platform):
         val = request.form.get(field, "").strip()
         if val:
             conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                "_upsert_setting(conn, key, value) (key, value) VALUES (?, ?)",
                 (f"oauth_{platform}_{field}", val),
             )
     conn.commit()
@@ -363,11 +377,42 @@ def oauth_callback(platform):
     if error or not code:
         flash(f"OAuth cancelled or failed: {error or 'no code received'}", "error")
         return redirect(url_for("accounts"))
+
+    # Exchange code for real token immediately
+    settings = get_settings()
+    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
+    redirect_uri = f"https://{domain}/oauth/callback/{platform}"
+
     conn = get_db()
-    conn.execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-        (f"oauth_{platform}_access_token", f"code:{code}"),
-    )
+
+    if platform == "youtube":
+        try:
+            from youtube_upload import exchange_code_for_token
+            client_id = settings.get("oauth_youtube_client_id", "")
+            client_secret = settings.get("oauth_youtube_client_secret", "")
+            if client_id and client_secret:
+                token_data = exchange_code_for_token(
+                    code, client_id, client_secret, redirect_uri
+                )
+                import json
+                # Save both access_token and full token_data (with refresh_token)
+                _upsert_setting(conn, "oauth_youtube_access_token",
+                               token_data.get("access_token", ""))
+                _upsert_setting(conn, "oauth_youtube_token_data",
+                               json.dumps(token_data))
+                _upsert_setting(conn, "oauth_youtube_refresh_token",
+                               token_data.get("refresh_token", ""))
+                conn.commit()
+                conn.close()
+                flash("YouTube connected successfully!", "success")
+                return redirect(url_for("accounts"))
+        except Exception as e:
+            conn.close()
+            flash(f"Token exchange failed: {str(e)}", "error")
+            return redirect(url_for("accounts"))
+
+    # For other platforms, save the code for now
+    _upsert_setting(conn, f"oauth_{platform}_access_token", f"code:{code}")
     conn.commit()
     conn.close()
     flash(f"{platform.title()} connected!", "success")
@@ -780,7 +825,7 @@ def settings_update():
         ("viral_score_min", viral_score_min),
         ("clips_per_day", clips_per_day),
     ]:
-        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, val))
+        conn.execute("_upsert_setting(conn, key, value) (key, value) VALUES (?, ?)", (key, val))
     conn.commit()
     conn.close()
     flash("Settings saved.", "success")
@@ -794,7 +839,7 @@ def settings_save_api_key():
         flash("API key cannot be empty.", "error")
         return redirect(url_for("settings"))
     conn = get_db()
-    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("youtube_api_key", key))
+    conn.execute("_upsert_setting(conn, key, value) (key, value) VALUES (?, ?)", ("youtube_api_key", key))
     conn.commit()
     conn.close()
     flash("YouTube API key saved.", "success")
@@ -954,7 +999,7 @@ def process_clip_route():
     try:
         result = process_full_pipeline(video_id, start_sec, end_sec, output_format, quality, caption, remove_bgm)
         conn = get_db()
-        conn.execute("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)",
+        conn.execute("_upsert_setting(conn, key, value) (key,value) VALUES (?,?)",
                     (f"clip_file_{video_id}", result["clip_filename"]))
         conn.commit()
         conn.close()
