@@ -8,7 +8,14 @@
 {% endblock %}
 
 {% block content %}
-<div style="max-width:640px">
+<style>
+.dur-btn{padding:10px 22px;font-size:14px;cursor:pointer;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);font-weight:600;transition:all .15s}
+.dur-btn.sel{border-color:var(--accent);background:rgba(127,119,221,.15);color:var(--accent);opacity:1}
+.genre-chip{padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
+.genre-chip.sel{border-color:var(--accent);background:rgba(127,119,221,.15);color:var(--accent)}
+.genre-grid{display:flex;flex-wrap:wrap;gap:8px}
+</style>
+<div style="max-width:680px">
 
     <!-- API SETTINGS -->
     <div class="card" style="margin-bottom:16px;border-color:{% if api_key_configured %}#2a4a2a{% else %}#3a2a10{% endif %}">
@@ -25,7 +32,7 @@
             Get a free key at <strong style="color:var(--accent)">console.cloud.google.com</strong> → APIs & Services → Credentials → Create API Key, then enable <em>YouTube Data API v3</em>.
             {% if env_key_set %}
             <div style="margin-top:8px;padding:8px 12px;background:#0e2018;border-radius:6px;border:1px solid #1a4a28;font-size:12px;color:var(--green)">
-                ✓ A key is set via Replit Secrets (takes priority over the field below)
+                ✓ A key is set via Railway environment variable (takes priority over the field below)
             </div>
             {% endif %}
         </div>
@@ -46,7 +53,16 @@
         <form id="clear-key-form" method="POST" action="/settings/clear-api-key"></form>
         {% endif %}
         <div style="margin-top:10px;font-size:11px;color:var(--text-faint)">
-            ⚠ Stored in local database. For better security, use the Replit Secrets panel (🔒 in sidebar) — it takes priority.
+            ⚠ Stored securely in PostgreSQL database. Setting via Railway Variables tab takes priority and is more secure.
+        </div>
+    </div>
+
+    <!-- YouTube OAuth Settings -->
+    <div class="card" style="margin-bottom:16px">
+        <div style="font-size:15px;font-weight:700;margin-bottom:4px">📤 YouTube Upload (OAuth)</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6">
+            Separate from the API key above — this enables automatic video uploads to your channel.
+            Configure this on the <a href="/accounts" style="color:var(--accent)">Accounts page</a> under YouTube → Set up API keys.
         </div>
     </div>
 
@@ -55,13 +71,18 @@
         <div class="card" style="margin-bottom:16px">
             <div style="font-size:15px;font-weight:700;margin-bottom:4px">Content Genres</div>
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Select which content genres to scan for viral videos</div>
-            <div class="checkbox-group">
+            <div class="genre-grid">
                 {% set active_genres = settings.genres.split(',') %}
-                {% for genre in ['Automotive', 'Food', 'DIY', 'Tech', 'Lifestyle', 'Gaming', 'Sports', 'Music'] %}
-                <label class="checkbox-item">
+                {% set genre_icons = {
+                    'Automotive':'🚗','Food':'🍜','DIY':'🔧','Tech':'💻','Lifestyle':'✨',
+                    'Gaming':'🎮','Sports':'⚽','Music':'🎵','Travel':'✈️','Education':'📚',
+                    'News':'📰','Comedy':'😂','Entertainment':'🎬','Podcast':'🎙️'
+                } %}
+                {% for genre in ['Automotive','Food','DIY','Tech','Lifestyle','Gaming','Sports','Music','Travel','Education','News','Comedy','Entertainment','Podcast'] %}
+                <label class="genre-chip {% if genre in active_genres %}sel{% endif %}" onclick="this.classList.toggle('sel'); this.querySelector('input').checked=this.classList.contains('sel')">
                     <input type="checkbox" name="genres" value="{{ genre }}"
-                           {% if genre in active_genres %}checked{% endif %}>
-                    {{ genre }}
+                           {% if genre in active_genres %}checked{% endif %} style="display:none">
+                    {{ genre_icons.get(genre, '📌') }} {{ genre }}
                 </label>
                 {% endfor %}
             </div>
@@ -76,9 +97,7 @@
                     <input type="radio" name="clip_duration" value="{{ dur }}" style="display:none"
                            {% if settings.clip_duration == dur|string %}checked{% endif %}
                            onchange="updateDurBtn()">
-                    <div class="dur-btn badge badge-purple" data-val="{{ dur }}"
-                         style="padding:8px 20px;font-size:14px;cursor:pointer;
-                                {% if settings.clip_duration == dur|string %}opacity:1{% else %}opacity:0.4{% endif %}">
+                    <div class="dur-btn {% if settings.clip_duration == dur|string %}sel{% endif %}" data-val="{{ dur }}">
                         {{ dur }}s
                     </div>
                 </label>
@@ -109,6 +128,32 @@
                 <div class="range-value">{{ settings.clips_per_day }}</div>
             </div>
         </div>
+
+        <div class="card" style="margin-bottom:16px">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px">🎬 Video Processing Defaults</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Applied automatically when auto-upload processes a clip</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div>
+                    <label class="form-label">Default Format</label>
+                    <select name="default_format" class="form-input">
+                        <option value="portrait" {% if settings.default_format == 'portrait' %}selected{% endif %}>Portrait 9:16 (TikTok/Reels/Shorts)</option>
+                        <option value="landscape" {% if settings.default_format == 'landscape' %}selected{% endif %}>Landscape 16:9 (YouTube)</option>
+                        <option value="square" {% if settings.default_format == 'square' %}selected{% endif %}>Square 1:1 (Instagram)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Default Quality</label>
+                    <select name="default_quality" class="form-input">
+                        <option value="720p" {% if settings.default_quality == '720p' %}selected{% endif %}>720p (faster)</option>
+                        <option value="1080p" {% if settings.default_quality == '1080p' %}selected{% endif %}>1080p (recommended)</option>
+                    </select>
+                </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer">
+                <input type="checkbox" name="remove_bgm" {% if settings.remove_bgm == '1' %}checked{% endif %}>
+                Remove background music automatically
+            </label>
+        </div>
     </form>
 </div>
 
@@ -116,7 +161,7 @@
 function updateDurBtn() {
     document.querySelectorAll('.dur-btn').forEach(btn => {
         const radio = btn.closest('label').querySelector('input[type=radio]');
-        btn.style.opacity = radio.checked ? '1' : '0.4';
+        btn.classList.toggle('sel', radio.checked);
     });
 }
 document.querySelectorAll('input[name=clip_duration]').forEach(r => r.addEventListener('change', updateDurBtn));
