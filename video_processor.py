@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import uuid
 import json
@@ -25,7 +26,7 @@ def check_ffmpeg() -> bool:
 def check_ytdlp() -> bool:
     """Check if yt-dlp is available."""
     try:
-        subprocess.run(["yt-dlp", "--version"], capture_output=True, timeout=5)
+        subprocess.run([sys.executable, "-m", "yt_dlp", "--version"], capture_output=True, timeout=5)
         return True
     except Exception:
         return False
@@ -41,7 +42,7 @@ def download_youtube_video(video_id: str, quality: str = "720") -> dict:
 
     # Get video info first
     info_cmd = [
-        "yt-dlp",
+        sys.executable, "-m", "yt_dlp",
         "--dump-json",
         "--no-playlist",
         url
@@ -59,7 +60,7 @@ def download_youtube_video(video_id: str, quality: str = "720") -> dict:
 
     # Download video
     download_cmd = [
-        "yt-dlp",
+        sys.executable, "-m", "yt_dlp",
         "-f", f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}][ext=mp4]/best",
         "--merge-output-format", "mp4",
         "-o", output_path,
