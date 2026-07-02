@@ -279,3 +279,27 @@ def _init_postgres(conn):
     if c == 0:
         for t in ["12:00", "16:00", "20:00"]:
             conn.execute("INSERT INTO schedule (slot_time, enabled) VALUES (%s, 1)", (t,))
+
+
+def migrate_db():
+    """Add any missing columns introduced after initial schema creation."""
+    conn = get_db()
+    new_cols = [
+        ("start_sec",   "REAL DEFAULT 0"),
+        ("end_sec",     "REAL DEFAULT 0"),
+        ("source_url",  "TEXT DEFAULT ''"),
+    ]
+    if USE_POSTGRES:
+        for col, defn in new_cols:
+            try:
+                conn.execute(f"ALTER TABLE queue ADD COLUMN IF NOT EXISTS {col} {defn}")
+            except Exception:
+                pass
+    else:
+        for col, defn in new_cols:
+            try:
+                conn.execute(f"ALTER TABLE queue ADD COLUMN {col} {defn}")
+            except Exception:
+                pass  # Column already exists
+    conn.commit()
+    conn.close()
