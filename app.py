@@ -4,7 +4,7 @@ import secrets as _secrets
 import requests as req_lib
 from datetime import date, timedelta, datetime
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify, send_file
-from db import init_db, get_db
+from db import init_db, get_db, migrate_db
 from youtube import fetch_trending, fetch_all_sources
 from youtube_upload import get_valid_access_token, upload_video_to_youtube, get_channel_info
 from analyzer import analyze_links
@@ -22,6 +22,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "viralcut-dev-secret")
 
 init_db()
+migrate_db()
 start_scheduler(app)
 
 MOCK_VIDEOS = [
@@ -225,6 +226,10 @@ def queue_add():
     genre = data.get("genre", "").strip()
     score = int(data.get("score", 0))
     duration = int(data.get("duration", 60))
+    notes = data.get("caption", "").strip()
+    start_sec = float(data.get("start_sec", 0))
+    end_sec = float(data.get("end_sec", duration))
+    source_url = data.get("source_url", "").strip()
 
     if not video_id or not title:
         return jsonify({"ok": False, "error": "missing fields"}), 400
@@ -235,8 +240,9 @@ def queue_add():
         return jsonify({"ok": False, "error": "already_queued"}), 409
 
     conn.execute(
-        "INSERT INTO queue (video_id, title, channel, thumbnail, views, likes, genre, score, duration) VALUES (?,?,?,?,?,?,?,?,?)",
-        (video_id, title, channel, thumbnail, views, likes, genre, score, duration)
+        "INSERT INTO queue (video_id, title, channel, thumbnail, views, likes, genre, score, duration, notes, start_sec, end_sec, source_url)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (video_id, title, channel, thumbnail, views, likes, genre, score, duration, notes, start_sec, end_sec, source_url)
     )
     conn.commit()
     count = conn.execute("SELECT COUNT(*) as c FROM queue WHERE status='pending'").fetchone()["c"]
@@ -250,7 +256,11 @@ def clip_editor():
     queue = conn.execute("SELECT * FROM queue WHERE status='pending' ORDER BY sort_order ASC, added_at ASC").fetchall()
     conn.close()
     import json
-    queue_json = json.dumps([dict(q) for q in queue])
+    def _json_serial(obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        raise TypeError(f"Type {type(obj)} not serializable")
+    queue_json = json.dumps([dict(q) for q in queue], default=_json_serial)
     return render_template("clip_editor.html", active="clip-editor", queue=queue, queue_json=queue_json)
 
 
