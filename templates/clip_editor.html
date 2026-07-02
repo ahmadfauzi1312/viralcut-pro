@@ -329,6 +329,22 @@ let currentClipId = {{ queue[0].id if queue else 'null' }};
 let currentDuration = {{ queue[0].duration if queue else 30 }};
 const queueData = {{ queue_json|safe }};
 
+// Genre → hashtag mapping
+const GENRE_HASHTAGS = {
+    'Automotive': '#cars #automotive #carlovers #carenthusiast #carsoftiktok',
+    'Food': '#foodie #recipe #cooking #foodlover #foodtok #easyrecipe',
+    'DIY': '#diy #homeimprovement #lifehack #tutorial #diyhome',
+    'Tech': '#tech #gadgets #techlife #productivity #techtips',
+    'Lifestyle': '#lifestyle #motivation #tips #selfimprovement #mindset',
+    'Gaming': '#gaming #gamer #gameplay #esports #gamingtips',
+    'Sports': '#sports #fitness #athlete #training #workout',
+    'Music': '#music #musiclover #song #viral #trending',
+};
+
+function getHashtags(genre) {
+    return (GENRE_HASHTAGS[genre] || '#viral #trending #fyp') + ' #fyp #indonesia #kontenlokal';
+}
+
 function selectClip(id, el) {
     document.querySelectorAll('.queue-item').forEach(q => q.classList.remove('active'));
     el.classList.add('active');
@@ -340,11 +356,22 @@ function selectClip(id, el) {
     document.getElementById('clip-duration').textContent = clip.duration + 's';
     document.getElementById('clip-genre').textContent = clip.genre;
     document.getElementById('clip-score').textContent = 'Score: ' + clip.score;
-    document.getElementById('source-url').value = clip.video_id || '';
-    document.getElementById('caption-text').value = clip.notes || '';
+    // Use source_url if available, else fall back to video_id
+    const srcId = (clip.source_url || clip.video_id || '').replace('https://www.youtube.com/watch?v=', '').replace('https://youtu.be/', '');
+    document.getElementById('source-url').value = srcId;
+    // Auto-populate caption from saved notes (analyzer caption)
+    const caption = clip.notes || '';
+    document.getElementById('caption-text').value = caption;
+    updateCaptionCount();
+    // Auto-populate hashtags from genre
+    document.getElementById('hashtags').value = getHashtags(clip.genre || 'Lifestyle');
     document.getElementById('source-credit').value = 'Source: @' + (clip.channel || '');
-    document.getElementById('trim-end-val').textContent = clip.duration + 's';
-    document.getElementById('trim-info').textContent = `Clip: 0s → ${clip.duration}s (${clip.duration}s total)`;
+    // Update trim bar
+    const startSec = clip.start_sec || 0;
+    const endSec = clip.end_sec || clip.duration || 30;
+    document.getElementById('trim-start-val').textContent = Math.round(startSec) + 's';
+    document.getElementById('trim-end-val').textContent = Math.round(endSec) + 's';
+    document.getElementById('trim-info').textContent = `Clip: ${Math.round(startSec)}s → ${Math.round(endSec)}s (${Math.round(endSec - startSec)}s total)`;
 }
 
 function showTool(name, btn) {
@@ -412,12 +439,15 @@ document.getElementById('caption-text')?.addEventListener('input', updateCaption
 function generateAICaption() {
     const clip = queueData.find(c => c.id === currentClipId);
     if (!clip) return;
-    const captions = [
-        `🔥 This ${clip.genre} content is going viral for a reason!\n\nWatch till the end — you won't regret it 👀\n\nSource: @${clip.channel}\n\n#${clip.genre.toLowerCase()} #viral #trending #fyp #indonesia`,
-        `Nobody talks about this 🤫\n\n${clip.title.substring(0,50)}...\n\nFollow for more ${clip.genre} content!\n\n#viral #trending #fyp #foryou`,
-        `POV: You just found the most viral ${clip.genre.toLowerCase()} clip 🎯\n\nSave this before it disappears!\n\n#${clip.genre.toLowerCase()} #viral #fyp`,
+    const g = (clip.genre || 'Lifestyle').toLowerCase();
+    const hooks = [
+        `🔥 This ${clip.genre} content is going viral for a reason!\n\nWatch till the end — you won't regret it 👀\n\nSource: @${clip.channel}`,
+        `Nobody talks about this 🤫\n\n${clip.title.substring(0,60)}...\n\nFollow for more ${clip.genre} content! 🙏`,
+        `POV: You just found the most viral ${g} clip 🎯\n\nSave this before it disappears! 🔖\n\nSource: @${clip.channel}`,
+        `Wait for it... 🤯\n\n${clip.title.substring(0,60)}\n\nThis is the part everyone is sharing right now 🔥`,
     ];
-    document.getElementById('caption-text').value = captions[Math.floor(Math.random() * captions.length)];
+    document.getElementById('caption-text').value = hooks[Math.floor(Math.random() * hooks.length)];
+    document.getElementById('hashtags').value = getHashtags(clip.genre);
     updateCaptionCount();
 }
 
