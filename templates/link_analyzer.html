@@ -301,6 +301,7 @@ async function queueSegment(vi, si) {
     const seg = video?.segments[si];
     if (!video || !seg) return;
 
+    // Use real YouTube video_id + segment index to keep unique, but store real ID separately
     const payload = {
         video_id: video.video_id + '_seg' + si,
         title: `${video.title} — ${seg.label} (${seg.start_fmt}-${seg.end_fmt})`,
@@ -315,6 +316,7 @@ async function queueSegment(vi, si) {
         start_sec: seg.start,
         end_sec: seg.end,
         caption: seg.captions?.medium || '',
+        yt_video_id: video.video_id,
     };
 
     try {
