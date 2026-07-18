@@ -58,23 +58,42 @@ def download_youtube_video(video_id: str, quality: str = "720") -> dict:
         title = video_id
         duration = 0
 
-    # Download video
-    download_cmd = [
-        sys.executable, "-m", "yt_dlp",
-        "-f", f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}][ext=mp4]/best",
-        "--merge-output-format", "mp4",
-        "-o", output_path,
-        "--no-playlist",
-        "--socket-timeout", "30",
-        url
+    # Download video — try progressively simpler formats until one works
+    # Railway IPs often can't access DASH (split video+audio) streams,
+    # so we fall back to single-file formats that bundle video+audio together.
+    format_attempts = [
+        # Best: separate video+audio merged to mp4
+        f"bestvideo[vcodec!=none][height<={quality}]+bestaudio/bestvideo[vcodec!=none]+bestaudio",
+        # Good: any format with video, up to quality height
+        f"best[vcodec!=none][height<={quality}]/best[vcodec!=none]",
+        # Last resort: absolute best single file (may be lower quality)
+        "best",
     ]
 
-    result = subprocess.run(
-        download_cmd, capture_output=True, text=True, timeout=300
-    )
+    result = None
+    last_error = ""
+    for fmt in format_attempts:
+        download_cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "-f", fmt,
+            "--merge-output-format", "mp4",
+            "--no-check-certificate",
+            "-o", output_path,
+            "--no-playlist",
+            "--socket-timeout", "30",
+            "--retries", "3",
+            "--fragment-retries", "3",
+            url
+        ]
+        result = subprocess.run(
+            download_cmd, capture_output=True, text=True, timeout=300
+        )
+        if result.returncode == 0:
+            break
+        last_error = result.stderr[-300:]
 
-    if result.returncode != 0:
-        raise Exception(f"Download failed: {result.stderr[-500:]}")
+    if result is None or result.returncode != 0:
+        raise Exception(f"Download failed after all format attempts: {last_error}")
 
     # Find the downloaded file
     file_path = None
@@ -85,7 +104,21 @@ def download_youtube_video(video_id: str, quality: str = "720") -> dict:
             break
 
     if not file_path:
-        raise Exception("Downloaded file not found")
+        raise Exception("Downloaded file not found after successful yt-dlp run")
+
+    # Verify the file actually has a video stream (not just audio)
+    probe_cmd = [
+        "ffprobe", "-v", "quiet", "-select_streams", "v:0",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0", file_path
+    ]
+    probe = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+    if not probe.stdout.strip():
+        os.remove(file_path)
+        raise Exception(
+            "yt-dlp downloaded audio-only file — YouTube may be throttling this server. "
+            "Try again in a few minutes."
+        )
 
     return {
         "file_path": file_path,
