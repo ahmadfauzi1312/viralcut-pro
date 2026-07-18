@@ -14,6 +14,24 @@ os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 os.makedirs(CLIPS_DIR, exist_ok=True)
 
 
+def _cookies_args() -> list:
+    """
+    Return yt-dlp --cookies args if YOUTUBE_COOKIES env var is set.
+    Writes cookie content to a temp file (yt-dlp requires a file path).
+    """
+    import tempfile
+    cookies = os.environ.get("YOUTUBE_COOKIES", "").strip()
+    if not cookies:
+        return []
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, dir="/tmp"
+    )
+    tmp.write(cookies)
+    tmp.flush()
+    tmp.close()
+    return ["--cookies", tmp.name]
+
+
 def check_ffmpeg() -> bool:
     """Check if ffmpeg is available."""
     try:
@@ -72,6 +90,7 @@ def download_youtube_video(video_id: str, quality: str = "720") -> dict:
 
     result = None
     last_error = ""
+    cookie_args = _cookies_args()  # Pass YouTube cookies if available
     for fmt in format_attempts:
         download_cmd = [
             sys.executable, "-m", "yt_dlp",
@@ -83,8 +102,7 @@ def download_youtube_video(video_id: str, quality: str = "720") -> dict:
             "--socket-timeout", "30",
             "--retries", "3",
             "--fragment-retries", "3",
-            url
-        ]
+        ] + cookie_args + [url]
         result = subprocess.run(
             download_cmd, capture_output=True, text=True, timeout=300
         )
